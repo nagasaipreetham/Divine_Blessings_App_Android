@@ -152,10 +152,10 @@ class MainActivity : AppCompatActivity() {
             val repo = (application as DivineApplication).repository
             lifecycleScope.launch {
                 try {
-                    val isFav = repo.isFavorite(sid).first()
-                    if (isFav) repo.removeFavorite(sid) else repo.addFavorite(sid)
-                    // Update tint to reflect new state
-                    val nowFav = !isFav
+                    // Make it atomic and consistent to avoid double-tap/race feel
+                    repo.toggleFavorite(sid)
+                    // Re-read latest state and apply tint once
+                    val nowFav = repo.isFavorite(sid).first()
                     val red = androidx.core.content.ContextCompat.getColor(this@MainActivity, R.color.red)
                     val white = androidx.core.content.ContextCompat.getColor(this@MainActivity, android.R.color.white)
                     miniLike?.imageTintList = android.content.res.ColorStateList.valueOf(if (nowFav) red else white)
@@ -251,6 +251,9 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNav.visibility = if (onPlayer) View.GONE else View.VISIBLE
 
         updateMiniVisibility() // also re-applies margins based on visibility
+
+        // Start periodic updates for mini player UI & visibility
+        ui.post(ticker)
     }
 
     private fun updateMiniUI() {

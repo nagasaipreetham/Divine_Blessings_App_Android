@@ -135,14 +135,15 @@ class SongPlayerFragment : Fragment() {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        // Hide mini player and bottom nav while full player is active
-        activity?.findViewById<View>(R.id.mini_player_container)?.visibility = View.GONE
+        // Hide bottom nav while full player is active (MainActivity also handles this on destination change)
         activity?.findViewById<View>(R.id.bottomNav)?.visibility = View.GONE
+        // Remove explicit mini-player hide to avoid conflicts; MainActivity controls its visibility
+        // activity?.findViewById<View>(R.id.mini_player_container)?.visibility = View.GONE
 
         // Top app bar title and back arrow
         (activity as? AppCompatActivity)?.supportActionBar?.title = titleText
-        val toolbar = activity?.findViewById<MaterialToolbar>(R.id.topAppBar)
-        toolbar?.navigationIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_back_24)
+        val toolbar = activity?.findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.topAppBar)
+        toolbar?.navigationIcon = androidx.appcompat.content.res.AppCompatResources.getDrawable(requireContext(), R.drawable.ic_back_24)
         toolbar?.setNavigationOnClickListener { findNavController().navigateUp() }
 
         // Ensure the NavHost has no bottom margin on the full player (removes extra gap)
@@ -181,9 +182,9 @@ class SongPlayerFragment : Fragment() {
         // (previous ViewCompat.setOnApplyWindowInsetsListener(bottomBar) block removed)
 
         // Choose initial language from app default
-        val appDefaultLang = (requireActivity().application as DivineApplication).getCurrentLanguage()
+        val appDefaultLang = (requireActivity().application as com.example.divneblessing_v0.DivineApplication).getCurrentLanguage()
         currentLang = if (appDefaultLang.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
-        btnLang.text = if (currentLang == Lang.TELUGU) "A" else "అ"
+        // Do not set btnLang.text here; loadLyrics() will set the correct label consistently
         loadLyrics(currentLang)
 
         // Counter init (per song, session-only)
@@ -209,44 +210,19 @@ class SongPlayerFragment : Fragment() {
         // Language toggle
         btnLang.setOnClickListener {
             currentLang = if (currentLang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
-            // Show the opposite language that will be displayed if clicked
-            btnLang.text = if (currentLang == Lang.TELUGU) "A" else "అ"
+            // Do not set btnLang.text here; loadLyrics() will set it consistently
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
             loadLyrics(currentLang)
             // keep the highlight roughly in place based on current playback position
             highlightForTime(pos)
         }
 
-        // Set initial language button text - show the opposite language
-        btnLang.text = if (currentLang == Lang.TELUGU) "A" else "అ"
+        // Toggle "no lyrics" message
+        txtNoLyrics.isVisible = lines.isEmpty()
 
-        // Play / Pause
-        btnPlay.setOnClickListener {
-            if (!hasAudio || mediaPlayerService == null) return@setOnClickListener
-            
-            val isPlaying = mediaPlayerService?.togglePlayPause() ?: false
-            btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
-        }
-
-        // Seekbar
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && hasAudio && mediaPlayerService != null) {
-                    mediaPlayerService?.seekTo(progress)
-                    updateProgressAndHighlight()
-                }
-            }
-            override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
-        })
-
-        // Locate button: scroll to current highlighted line
-        btnLocate.setOnClickListener {
-            val p = mediaPlayerService?.getCurrentPosition() ?: 0
-            val idx = adapter.indexForTime(p)
-            if (idx >= 0) {
-                (lyricsList.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(idx, (lyricsList.height * 0.35).toInt())
-            }
+        // Ensure lyrics visible
+        if (lines.isNotEmpty()) {
+            lyricsList.post { lyricsList.scrollToPosition(0) }
         }
     }
 
@@ -296,7 +272,8 @@ class SongPlayerFragment : Fragment() {
     // - If currentLang == ENGLISH (showing English) => toggle shows "అ"
     private fun loadLyrics(lang: Lang) {
         currentLang = lang
-        btnLang.text = if (lang == Lang.TELUGU) "అ" else "A"
+        // Set button to show the target language (opposite of current)
+        btnLang.text = if (lang == Lang.TELUGU) "A" else "అ"
 
         val langFolder = if (lang == Lang.TELUGU) "telugu" else "english"
         val code = if (lang == Lang.TELUGU) "te" else "en"
