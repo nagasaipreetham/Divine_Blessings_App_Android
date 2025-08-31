@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">divneblessing_v0</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_favorites">Favorites</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_counter">Counter</string>
+    <string name="back">Back</string>
+</resources>

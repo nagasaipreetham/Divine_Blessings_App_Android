@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Back button on top-left (hidden, we use toolbar back arrow) -->
+    <ImageButton
+        android:id="@+id/btnBack"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bg_circle_btn"
+        app:srcCompat="@drawable/ic_back_24"
+        app:tint="?android:attr/textColorPrimary"
+        android:visibility="gone"
+        android:contentDescription="@string/back" />
+
+    <!-- Lyrics list -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_lyrics"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="72dp"
+        android:paddingBottom="96dp" />
+
+    <!-- Right rail controls -->
+    <LinearLayout
+        android:layout_width="72dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="100dp"
+        android:layout_gravity="center|end"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingEnd="0dp">
+    
+        <!-- Inside the right-rail container, update only the toggle button -->
+        <Button
+            android:id="@+id/btnLangToggle"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            android:text="అ"
+            android:textColor="?attr/colorOnPrimary"
+            android:textSize="28sp"
+            android:padding="4dp"
+            android:gravity="center"
+            android:includeFontPadding="true" />
+    
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="8dp" />
+
+        <ImageButton
+            android:id="@+id/btnPlusSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_plus_24"
+            app:tint="?attr/colorOnPrimary" />
+
+        <TextView
+            android:id="@+id/txtSmallCount"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_circle_btn"
+            android:gravity="center"
+            android:text="0"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="18sp" />
+
+        <ImageButton
+            android:id="@+id/btnMinusSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_minus_24"
+            app:tint="?attr/colorOnPrimary" />
+
+        <ImageButton
+            android:id="@+id/btnResetSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@android:drawable/ic_menu_revert"
+            app:tint="?attr/colorOnPrimary" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="8dp" />
+
+        <ImageButton
+            android:id="@+id/btnLocate"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_locate_24"
+            app:tint="?attr/colorOnPrimary" />
+    </LinearLayout>
+
+    <!-- Bottom player bar -->
+    <LinearLayout
+        android:id="@+id/bottom_player_bar"
+        android:layout_width="match_parent"
+        android:layout_height="96dp"
+        android:layout_gravity="bottom"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:gravity="center_vertical"
+        android:background="?attr/colorSurface">
+
+        <TextView
+            android:id="@+id/txtElapsed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:layout_marginEnd="8dp"/>
+
+        <SeekBar
+            android:id="@+id/seekbar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="100"
+            android:progress="0"/>
+
+        <TextView
+            android:id="@+id/txtTotal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:layout_marginStart="8dp"/>
+
+        <Space
+            android:layout_width="12dp"
+            android:layout_height="0dp" />
+
+        <ImageButton
+            android:id="@+id/btnPlayPause"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_play_24"
+            app:tint="?attr/colorOnPrimary" />
+    </LinearLayout>
+
+    <!-- 'No lyrics' message -->
+    <TextView
+        android:id="@+id/txtNoLyrics"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="No lyrics available"
+        android:textColor="?android:attr/textColorSecondary"
+        android:background="@drawable/bg_card_rounded"
+        android:padding="8dp"
+        android:layout_gravity="center"
+        android:visibility="gone"/>
+
+    <!-- 'No song' message -->
+    <TextView
+        android:id="@+id/txtNoSong"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="There is no song"
+        android:textColor="?android:attr/textColorSecondary"
+        android:background="@drawable/bg_card_rounded"
+        android:padding="8dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginBottom="96dp"
+        android:visibility="gone"/>
+
+</FrameLayout>
