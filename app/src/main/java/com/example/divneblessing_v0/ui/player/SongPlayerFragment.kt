@@ -71,6 +71,7 @@ class SongPlayerFragment : Fragment() {
     private var mediaPlayerService: MediaPlayerService? = null
     private var serviceBound = false
     private var hasAudio = false
+    private var userSeeking = false
     
     private val ui = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
@@ -178,14 +179,10 @@ class SongPlayerFragment : Fragment() {
         adapter = LyricsAdapter(emptyList())
         lyricsList.adapter = adapter
 
-        // Removed: insets padding that created bottom gap
-        // (previous ViewCompat.setOnApplyWindowInsetsListener(bottomBar) block removed)
-
         // Initialize lyrics language from session (falls back to app default)
         val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
         val sessionLang = app.getCurrentLyricsLanguageOrDefault()
         currentLang = if (sessionLang.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
-        // Do not set btnLang.text here; loadLyrics() will set the correct label consistently
         loadLyrics(currentLang)
 
         // Counter init (per song, session-only)
@@ -197,7 +194,7 @@ class SongPlayerFragment : Fragment() {
             saveCounterToDatabase(newCount)
         }
         btnMinus.setOnClickListener {
-            val newCount = max(0, SessionCounters.get(songId) - 1)
+            val newCount = kotlin.math.max(0, SessionCounters.get(songId) - 1)
             SessionCounters.set(songId, newCount)
             txtCounter.text = newCount.toString()
             saveCounterToDatabase(newCount)
@@ -208,15 +205,47 @@ class SongPlayerFragment : Fragment() {
             saveCounterToDatabase(0)
         }
 
-        // Language toggle
+        // Language toggle (session-only)
         btnLang.setOnClickListener {
             currentLang = if (currentLang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
-            // Persist only for this app session (not global setting)
             val app2 = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
             app2.setCurrentLyricsLanguage(if (currentLang == Lang.ENGLISH) "english" else "telugu")
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
             loadLyrics(currentLang)
-            // keep the highlight roughly in place based on current playback position
+            highlightForTime(pos)
+        }
+
+        // NEW: Play/Pause click handler
+        btnPlay.setOnClickListener {
+            if (!hasAudio && serviceBound) {
+                // If UI wasn’t initialized yet, try to set it up
+                setupAudio()
+            }
+            val playing = mediaPlayerService?.togglePlayPause() ?: false
+            btnPlay.setImageResource(if (playing) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
+        }
+
+        // NEW: SeekBar change listener
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(sb: SeekBar) {
+                userSeeking = true
+            }
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                val pos = sb.progress
+                mediaPlayerService?.seekTo(pos)
+                userSeeking = false
+                highlightForTime(pos)
+            }
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    txtElapsed.text = formatMs(progress)
+                }
+            }
+        })
+
+        // NEW: Locate current lyric line
+        btnLocate.setOnClickListener {
+            val pos = mediaPlayerService?.getCurrentPosition() ?: 0
             highlightForTime(pos)
         }
 
@@ -348,7 +377,9 @@ class SongPlayerFragment : Fragment() {
             try {
                 val cur = mediaPlayerService?.getCurrentPosition() ?: 0
                 txtElapsed.text = formatMs(cur)
-                seek.progress = cur
+                if (!userSeeking) {
+                    seek.progress = cur
+                }
                 
                 // Only update highlight every other time to reduce UI load
                 if (System.currentTimeMillis() % 500 < 250) {

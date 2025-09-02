@@ -100,14 +100,7 @@
             android:background="@drawable/bg_edit_text"
             android:layout_marginBottom="24dp"/>
 
-        <!-- Save Button -->
-        <Button
-            android:id="@+id/saveButton"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="Save Settings"
-            android:textSize="16sp"
-            android:background="@drawable/bg_button_primary"/>
+        <!-- Save Button Removed -->
 
     </LinearLayout>
 </ScrollView>

@@ -28,7 +28,10 @@ class ProfileFragment : Fragment() {
     private lateinit var themeSpinner: Spinner
     private lateinit var accentColorSpinner: Spinner
     private lateinit var languageSpinner: Spinner
-    private lateinit var saveButton: Button
+    // Save button removed
+
+    // Flag to prevent triggering spinner listeners during initial setup
+    private var isInitialSetup = true
 
     private val pickImage = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -59,7 +62,14 @@ class ProfileFragment : Fragment() {
         themeSpinner = view.findViewById(R.id.themeSpinner)
         accentColorSpinner = view.findViewById(R.id.accentColorSpinner)
         languageSpinner = view.findViewById(R.id.languageSpinner)
-        saveButton = view.findViewById(R.id.saveButton)
+        // Save button removed
+        
+        // Auto-save username when focus changes
+        userNameEditText.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                saveUserName(userNameEditText.text.toString())
+            }
+        }
     }
 
     private fun setupSpinners() {
@@ -80,10 +90,55 @@ class ProfileFragment : Fragment() {
         val languageAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, languages)
         languageAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         languageSpinner.adapter = languageAdapter
+        
+        // Add listeners for auto-save functionality
+        themeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (!isInitialSetup) {
+                    val themeMode = when (position) {
+                        1 -> "light"
+                        2 -> "dark"
+                        else -> "system"
+                    }
+                    applyTheme(themeMode)
+                }
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        
+        accentColorSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (!isInitialSetup) {
+                    val accentColor = when (position) {
+                        1 -> "green"
+                        2 -> "purple"
+                        3 -> "orange"
+                        4 -> "red"
+                        else -> "blue"
+                    }
+                    applyAccentColor(accentColor)
+                }
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        
+        languageSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (!isInitialSetup) {
+                    val language = if (position == 1) "english" else "telugu"
+                    applyDefaultLanguage(language)
+                }
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     private fun loadUserSettings() {
         val repository = (requireActivity().application as DivineApplication).repository
+        isInitialSetup = true
     
         // Ensure database settings exist first
         viewLifecycleOwner.lifecycleScope.launch {
@@ -97,9 +152,6 @@ class ProfileFragment : Fragment() {
             val savedUserName = sharedPrefs.getString("user_name", "User")
     
             android.util.Log.d("ProfileFragment", "Loading settings: theme=$savedTheme, color=$savedColor, lang=$savedLanguage")
-    
-            // Apply saved theme immediately (safe: applyTheme() now skips if unchanged)
-            applyTheme(savedTheme ?: "system")
     
             // Set UI values on main thread
             withContext(Dispatchers.Main) {
@@ -126,6 +178,9 @@ class ProfileFragment : Fragment() {
                 // Set language spinner
                 val languageIndex = if (savedLanguage == "english") 1 else 0
                 languageSpinner.setSelection(languageIndex)
+                
+                // Enable spinner listeners after initial setup
+                isInitialSetup = false
             }
     
             // Also sync database settings with SharedPreferences
@@ -147,67 +202,28 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun saveSettings() {
+    private fun saveUserName(userName: String) {
+        if (userName.isEmpty()) return
+        
         val repository = (requireActivity().application as DivineApplication).repository
-
+        val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
+        
         viewLifecycleOwner.lifecycleScope.launch {
-            val userName = userNameEditText.text.toString()
+            // Save to SharedPreferences
+            sharedPrefs.edit().putString("user_name", userName).apply()
             
-            val themeMode = when (themeSpinner.selectedItemPosition) {
-                1 -> "light"
-                2 -> "dark"
-                else -> "system"
-            }
+            // Save to database
+            repository.updateUserName(userName)
             
-            val accentColor = when (accentColorSpinner.selectedItemPosition) {
-                1 -> "green"
-                2 -> "purple"
-                3 -> "orange"
-                4 -> "red"
-                else -> "blue"
-            }
-            
-            val language = if (languageSpinner.selectedItemPosition == 1) "english" else "telugu"
-
-            android.util.Log.d("ProfileFragment", "Saving settings: theme=$themeMode, color=$accentColor, lang=$language")
-
-            // Persist to SharedPreferences FIRST for immediate access
-            val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
-            with(sharedPrefs.edit()) {
-                putString("theme_mode", themeMode)
-                putString("accent_color", accentColor)
-                putString("default_language", language)
-                putString("user_name", userName)
-                commit() // immediate persistence
-            }
-
-            // Then update database
-            try {
-                if (userName.isNotEmpty()) {
-                    repository.updateUserName(userName)
-                }
-                repository.updateThemeMode(themeMode)
-                repository.updateAccentColor(accentColor)
-                repository.updateDefaultLanguage(language)
-
-                // Apply changes immediately (each method now recreates ONLY if changed)
-                applyTheme(themeMode)
-                applyAccentColor(accentColor)
-                applyDefaultLanguage(language)
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(requireContext(), "Settings saved!", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ProfileFragment", "Error saving settings: ${e.message}")
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(requireContext(), "Error saving settings", Toast.LENGTH_SHORT).show()
-                }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(requireContext(), "Name saved", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     private fun setupSettings(settings: com.example.divneblessing_v0.data.UserSettings) {
+        isInitialSetup = true
+        
         userNameEditText.setText(settings.userName)
 
         // Set theme spinner
@@ -240,16 +256,15 @@ class ProfileFragment : Fragment() {
                 .error(R.drawable.ic_person_24)
                 .into(profileImageView)
         }
+        
+        isInitialSetup = false
     }
 
     private fun setupClickListeners() {
         profileImageView.setOnClickListener {
             openImagePicker()
         }
-
-        saveButton.setOnClickListener {
-            saveSettings()
-        }
+        // Save button click listener removed
     }
 
     private fun openImagePicker() {
@@ -272,6 +287,7 @@ class ProfileFragment : Fragment() {
     }
 
     private fun applyTheme(themeMode: String) {
+        val repository = (requireActivity().application as DivineApplication).repository
         val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
         val currentTheme = sharedPrefs.getString("theme_mode", "system")
 
@@ -281,18 +297,30 @@ class ProfileFragment : Fragment() {
         }
 
         android.util.Log.d("ProfileFragment", "Applying theme: $themeMode")
+        
+        // Save to SharedPreferences
+        sharedPrefs.edit().putString("theme_mode", themeMode).apply()
+        
+        // Save to database
+        viewLifecycleOwner.lifecycleScope.launch {
+            repository.updateThemeMode(themeMode)
+        }
+        
+        // Apply theme immediately
         when (themeMode) {
             "light" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
             "dark" -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
             else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
 
-        // Save & recreate only if changed
-        sharedPrefs.edit().putString("theme_mode", themeMode).commit()
+        // Recreate activity to apply theme changes
         activity?.recreate()
+        
+        Toast.makeText(requireContext(), "Theme updated", Toast.LENGTH_SHORT).show()
     }
 
     private fun applyAccentColor(accentColor: String) {
+        val repository = (requireActivity().application as DivineApplication).repository
         val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
         val currentColor = sharedPrefs.getString("accent_color", "blue")
 
@@ -302,7 +330,14 @@ class ProfileFragment : Fragment() {
         }
 
         android.util.Log.d("ProfileFragment", "Applying accent color: $accentColor")
-        sharedPrefs.edit().putString("accent_color", accentColor).commit()
+        
+        // Save to SharedPreferences
+        sharedPrefs.edit().putString("accent_color", accentColor).apply()
+        
+        // Save to database
+        viewLifecycleOwner.lifecycleScope.launch {
+            repository.updateAccentColor(accentColor)
+        }
 
         // Map to your style names defined in themes.xml / themes-night.xml
         val colorResId = when (accentColor) {
@@ -313,12 +348,15 @@ class ProfileFragment : Fragment() {
             else -> R.style.Theme_divneblessing_v0_Blue
         }
 
-        // Apply & recreate only if changed
+        // Apply & recreate
         requireActivity().setTheme(colorResId)
         activity?.recreate()
+        
+        Toast.makeText(requireContext(), "Accent color updated", Toast.LENGTH_SHORT).show()
     }
 
     private fun applyDefaultLanguage(language: String) {
+        val repository = (requireActivity().application as DivineApplication).repository
         android.util.Log.d("ProfileFragment", "Applying default language: $language")
 
         // Save to preferences
@@ -326,7 +364,13 @@ class ProfileFragment : Fragment() {
         val currentLang = sharedPrefs.getString("default_language", "telugu")
         if (currentLang == language) return
 
-        sharedPrefs.edit().putString("default_language", language).commit()
+        // Save to SharedPreferences
+        sharedPrefs.edit().putString("default_language", language).apply()
+        
+        // Save to database
+        viewLifecycleOwner.lifecycleScope.launch {
+            repository.updateDefaultLanguage(language)
+        }
 
         // Apply language setting immediately
         val config = resources.configuration
@@ -337,7 +381,9 @@ class ProfileFragment : Fragment() {
         // Notify the application about language change
         (requireActivity().application as DivineApplication).updateLanguage(language)
 
-        // Optional: recreate if you want strings to refresh everywhere
+        // Recreate to apply language changes
         activity?.recreate()
+        
+        Toast.makeText(requireContext(), "Language updated", Toast.LENGTH_SHORT).show()
     }
 }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accent color themes -->
+    <style name="Theme.divneblessing_v0.Blue" parent="Base.Theme.divneblessing_v0">
+        <item name="colorPrimary">@color/blue</item>
+        <item name="colorPrimaryVariant">@color/blue</item>
+        <item name="colorSecondary">@color/blue</item>
+    </style>
+
+    <style name="Theme.divneblessing_v0.Green" parent="Base.Theme.divneblessing_v0">
+        <item name="colorPrimary">@color/green</item>
+        <item name="colorPrimaryVariant">@color/green</item>
+        <item name="colorSecondary">@color/green</item>
+    </style>
+
+    <style name="Theme.divneblessing_v0.Purple" parent="Base.Theme.divneblessing_v0">
+        <item name="colorPrimary">@color/purple</item>
+        <item name="colorPrimaryVariant">@color/purple</item>
+        <item name="colorSecondary">@color/purple</item>
+    </style>
+
+    <style name="Theme.divneblessing_v0.Orange" parent="Base.Theme.divneblessing_v0">
+        <item name="colorPrimary">@color/orange</item>
+        <item name="colorPrimaryVariant">@color/orange</item>
+        <item name="colorSecondary">@color/orange</item>
+    </style>
+
+    <style name="Theme.divneblessing_v0.Red" parent="Base.Theme.divneblessing_v0">
+        <item name="colorPrimary">@color/red</item>
+        <item name="colorPrimaryVariant">@color/red</item>
+        <item name="colorSecondary">@color/red</item>
+    </style>
+</resources>
