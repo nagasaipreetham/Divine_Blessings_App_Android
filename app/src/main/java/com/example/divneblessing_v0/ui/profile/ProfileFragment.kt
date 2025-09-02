@@ -32,7 +32,7 @@ class ProfileFragment : Fragment() {
     private lateinit var accentColorSpinner: Spinner
     private lateinit var languageSpinner: Spinner
 
-    private var isInitialSetup = true
+    private var isInitialSetup = true  // Flag to avoid triggering onItemSelected during UI setup
     private var saveJob: Job? = null
     private var lastSavedUserName: String = ""
 
@@ -46,6 +46,12 @@ class ProfileFragment : Fragment() {
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         return inflater.inflate(R.layout.fragment_profile, container, false)
+    }
+
+    private fun setupClickListeners() {
+        profileImageView.setOnClickListener {
+            openImagePicker()
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -65,19 +71,18 @@ class ProfileFragment : Fragment() {
         accentColorSpinner = view.findViewById(R.id.accentColorSpinner)
         languageSpinner = view.findViewById(R.id.languageSpinner)
 
-        // Debounce username save: wait 1 second after user stops typing to save
+        // Debounced username save after user stops typing 1 sec
         userNameEditText.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) { /* no-op */ }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (isInitialSetup) return
-                saveJob?.cancel() // cancel previous pending save
+                saveJob?.cancel()
             }
             override fun afterTextChanged(s: android.text.Editable?) {
                 if (isInitialSetup) return
-
                 val newName = s?.toString() ?: ""
                 saveJob = viewLifecycleOwner.lifecycleScope.launch {
-                    delay(1000L) // 1 second debounce
+                    delay(1000L)
                     if (newName.isNotEmpty() && newName != lastSavedUserName) {
                         saveUserName(newName)
                     }
@@ -104,12 +109,15 @@ class ProfileFragment : Fragment() {
 
         themeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (!isInitialSetup) {
-                    val themeMode = when (position) {
-                        1 -> "light"
-                        2 -> "dark"
-                        else -> "system"
-                    }
+                if (isInitialSetup) return
+                val themeMode = when (position) {
+                    1 -> "light"
+                    2 -> "dark"
+                    else -> "system"
+                }
+                // Avoid unnecessary apply if already set
+                val currentTheme = getCurrentSavedTheme()
+                if (currentTheme != themeMode) {
                     applyTheme(themeMode)
                 }
             }
@@ -118,14 +126,16 @@ class ProfileFragment : Fragment() {
 
         accentColorSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (!isInitialSetup) {
-                    val accentColor = when (position) {
-                        1 -> "green"
-                        2 -> "purple"
-                        3 -> "orange"
-                        4 -> "red"
-                        else -> "blue"
-                    }
+                if (isInitialSetup) return
+                val accentColor = when (position) {
+                    1 -> "green"
+                    2 -> "purple"
+                    3 -> "orange"
+                    4 -> "red"
+                    else -> "blue"
+                }
+                val currentAccent = getCurrentSavedAccent()
+                if (currentAccent != accentColor) {
                     applyAccentColor(accentColor)
                 }
             }
@@ -134,8 +144,10 @@ class ProfileFragment : Fragment() {
 
         languageSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (!isInitialSetup) {
-                    val language = if (position == 1) "english" else "telugu"
+                if (isInitialSetup) return
+                val language = if (position == 1) "english" else "telugu"
+                val currentLanguage = getCurrentSavedLanguage()
+                if (currentLanguage != language) {
                     applyDefaultLanguage(language)
                 }
             }
@@ -181,22 +193,6 @@ class ProfileFragment : Fragment() {
 
                 isInitialSetup = false
             }
-
-            repository.getUserSettings().collectLatest { settings ->
-                settings?.let {
-                    val editor = sharedPrefs.edit()
-                    editor.putString("theme_mode", it.themeMode)
-                    editor.putString("accent_color", it.accentColor)
-                    editor.putString("default_language", it.defaultLanguage)
-                    editor.putString("user_name", it.userName)
-                    editor.apply()
-
-                    withContext(Dispatchers.Main) {
-                        setupSettings(it)
-                        lastSavedUserName = it.userName ?: ""
-                    }
-                }
-            }
         }
     }
 
@@ -221,12 +217,9 @@ class ProfileFragment : Fragment() {
     private fun setupSettings(settings: com.example.divneblessing_v0.data.UserSettings) {
         isInitialSetup = true
 
-        val currentCursorPosition = userNameEditText.selectionStart.takeIf { it >= 0 } ?: 0
+        val currentCursor = userNameEditText.selectionStart.takeIf { it >= 0 } ?: 0
         userNameEditText.setText(settings.userName)
-
-        // Restore cursor position within the new text length bounds
-        val newCursorPosition = currentCursorPosition.coerceIn(0, userNameEditText.text.length)
-        userNameEditText.setSelection(newCursorPosition)
+        userNameEditText.setSelection(currentCursor.coerceIn(0, userNameEditText.text.length))
 
         lastSavedUserName = settings.userName ?: ""
 
@@ -258,13 +251,6 @@ class ProfileFragment : Fragment() {
         }
 
         isInitialSetup = false
-    }
-
-
-    private fun setupClickListeners() {
-        profileImageView.setOnClickListener {
-            openImagePicker()
-        }
     }
 
     private fun openImagePicker() {
@@ -339,5 +325,20 @@ class ProfileFragment : Fragment() {
         (requireActivity().application as DivineApplication).updateLanguage(language)
         activity?.recreate()
         Toast.makeText(requireContext(), "Language updated", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun getCurrentSavedTheme(): String? {
+        val sharedPrefs = requireContext().getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
+        return sharedPrefs.getString("theme_mode", "system")
+    }
+
+    private fun getCurrentSavedAccent(): String? {
+        val sharedPrefs = requireContext().getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
+        return sharedPrefs.getString("accent_color", "blue")
+    }
+
+    private fun getCurrentSavedLanguage(): String? {
+        val sharedPrefs = requireContext().getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
+        return sharedPrefs.getString("default_language", "telugu")
     }
 }

@@ -62,11 +62,10 @@ class FavoritesFragment : Fragment() {
     private fun toggleFavorite(songId: String, isFavorite: Boolean) {
         val repository = (requireActivity().application as DivineApplication).repository
         viewLifecycleOwner.lifecycleScope.launch {
-            if (isFavorite) {
-                repository.removeFavorite(songId)
-                loadFavorites() // refresh after removal
-            } else {
-                repository.addFavorite(songId)
+            try {
+                repository.toggleFavorite(songId)
+            } catch (e: Exception) {
+                android.util.Log.e("FavoritesFragment", "Favorite toggle error: ${e.message}", e)
             }
         }
     }
@@ -96,11 +95,18 @@ class FavoritesAdapter(
         val item = items[position]
         holder.title.text = "${position + 1}. ${item.title}"
         holder.godName.text = item.godName
-        
-        // Always show filled heart in favorites with red tint
-        holder.like.setImageResource(R.drawable.ic_heart_filled_24)
-        val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
-        holder.like.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
+
+        fun renderLike() {
+            val iconRes = if (item.isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
+            holder.like.setImageResource(iconRes)
+            if (item.isFavorite) {
+                val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+                holder.like.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
+            } else {
+                holder.like.imageTintList = null
+            }
+        }
+        renderLike()
 
         // Apply theme-based tinting to play button - use current accent color
         val typedValue = android.util.TypedValue()
@@ -111,12 +117,11 @@ class FavoritesAdapter(
 
         holder.like.setOnClickListener {
             onToggleLike(item, !item.isFavorite)
-            // Update the item's favorite status immediately for UI feedback
+            // Update UI immediately
             val position = holder.adapterPosition
             if (position != RecyclerView.NO_POSITION) {
                 items[position].isFavorite = !items[position].isFavorite
-                val iconRes = if (items[position].isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
-                holder.like.setImageResource(iconRes)
+                renderLike()
             }
         }
         holder.play.setOnClickListener { onPlay(item) }

@@ -112,10 +112,10 @@ class SearchFragment : Fragment() {
         val repository = (requireActivity().application as DivineApplication).repository
         
         viewLifecycleOwner.lifecycleScope.launch {
-            if (isFavorite) {
-                repository.removeFavorite(songId)
-            } else {
-                repository.addFavorite(songId)
+            try {
+                repository.toggleFavorite(songId)
+            } catch (e: Exception) {
+                android.util.Log.e("SearchFragment", "Favorite toggle error: ${e.message}", e)
             }
         }
     }

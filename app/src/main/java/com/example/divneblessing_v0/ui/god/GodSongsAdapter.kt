@@ -35,12 +35,18 @@ class GodSongsAdapter(
         fun renderLike() {
             val iconRes = if (item.isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
             holder.like.setImageResource(iconRes)
+            if (item.isFavorite) {
+                val red = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+                holder.like.imageTintList = android.content.res.ColorStateList.valueOf(red)
+            } else {
+                holder.like.imageTintList = null
+            }
         }
         renderLike()
 
         holder.like.setOnClickListener {
             onToggleLike(item, !item.isFavorite)
-            // Update the item's favorite status immediately for UI feedback
+            // Update UI immediately
             val position = holder.adapterPosition
             if (position != RecyclerView.NO_POSITION) {
                 items[position].isFavorite = !items[position].isFavorite
