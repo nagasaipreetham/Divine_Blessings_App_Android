@@ -18,6 +18,8 @@ import com.example.divneblessing_v0.DivineApplication
 import com.example.divneblessing_v0.R
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ProfileFragment : Fragment() {
 
@@ -82,48 +84,125 @@ class ProfileFragment : Fragment() {
 
     private fun loadUserSettings() {
         val repository = (requireActivity().application as DivineApplication).repository
-
-        // Load from SharedPreferences first for immediate access
-        val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
-        val savedTheme = sharedPrefs.getString("theme_mode", "system")
-        val savedColor = sharedPrefs.getString("accent_color", "blue")
-        val savedLanguage = sharedPrefs.getString("default_language", "telugu")
-        val savedUserName = sharedPrefs.getString("user_name", "User")
-
-        android.util.Log.d("ProfileFragment", "Loading settings: theme=$savedTheme, color=$savedColor, lang=$savedLanguage")
-
-        // Apply saved theme immediately (safe: applyTheme() now skips if unchanged)
-        applyTheme(savedTheme ?: "system")
-
-        // Set UI values
-        userNameEditText.setText(savedUserName)
-
-        // Set theme spinner
-        val themeIndex = when (savedTheme) {
-            "light" -> 1
-            "dark" -> 2
-            else -> 0 // system
-        }
-        themeSpinner.setSelection(themeIndex)
-
-        // Set accent color spinner
-        val colorIndex = when (savedColor) {
-            "green" -> 1
-            "purple" -> 2
-            "orange" -> 3
-            "red" -> 4
-            else -> 0 // blue
-        }
-        accentColorSpinner.setSelection(colorIndex)
-
-        // Set language spinner
-        val languageIndex = if (savedLanguage == "english") 1 else 0
-        languageSpinner.setSelection(languageIndex)
-
-        // Also load from database for other settings
+    
+        // Ensure database settings exist first
         viewLifecycleOwner.lifecycleScope.launch {
+            repository.initializeDefaultSettings()
+            
+            // Load from SharedPreferences first for immediate access
+            val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
+            val savedTheme = sharedPrefs.getString("theme_mode", "system")
+            val savedColor = sharedPrefs.getString("accent_color", "blue")
+            val savedLanguage = sharedPrefs.getString("default_language", "telugu")
+            val savedUserName = sharedPrefs.getString("user_name", "User")
+    
+            android.util.Log.d("ProfileFragment", "Loading settings: theme=$savedTheme, color=$savedColor, lang=$savedLanguage")
+    
+            // Apply saved theme immediately (safe: applyTheme() now skips if unchanged)
+            applyTheme(savedTheme ?: "system")
+    
+            // Set UI values on main thread
+            withContext(Dispatchers.Main) {
+                userNameEditText.setText(savedUserName)
+    
+                // Set theme spinner
+                val themeIndex = when (savedTheme) {
+                    "light" -> 1
+                    "dark" -> 2
+                    else -> 0 // system
+                }
+                themeSpinner.setSelection(themeIndex)
+    
+                // Set accent color spinner
+                val colorIndex = when (savedColor) {
+                    "green" -> 1
+                    "purple" -> 2
+                    "orange" -> 3
+                    "red" -> 4
+                    else -> 0 // blue
+                }
+                accentColorSpinner.setSelection(colorIndex)
+    
+                // Set language spinner
+                val languageIndex = if (savedLanguage == "english") 1 else 0
+                languageSpinner.setSelection(languageIndex)
+            }
+    
+            // Also sync database settings with SharedPreferences
             repository.getUserSettings().collectLatest { settings ->
-                settings?.let { setupSettings(it) }
+                settings?.let { 
+                    // Sync SharedPreferences with database values
+                    val sharedPrefsEditor = sharedPrefs.edit()
+                    sharedPrefsEditor.putString("theme_mode", it.themeMode)
+                    sharedPrefsEditor.putString("accent_color", it.accentColor)
+                    sharedPrefsEditor.putString("default_language", it.defaultLanguage)
+                    sharedPrefsEditor.putString("user_name", it.userName)
+                    sharedPrefsEditor.apply()
+                    
+                    withContext(Dispatchers.Main) {
+                        setupSettings(it)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun saveSettings() {
+        val repository = (requireActivity().application as DivineApplication).repository
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val userName = userNameEditText.text.toString()
+            
+            val themeMode = when (themeSpinner.selectedItemPosition) {
+                1 -> "light"
+                2 -> "dark"
+                else -> "system"
+            }
+            
+            val accentColor = when (accentColorSpinner.selectedItemPosition) {
+                1 -> "green"
+                2 -> "purple"
+                3 -> "orange"
+                4 -> "red"
+                else -> "blue"
+            }
+            
+            val language = if (languageSpinner.selectedItemPosition == 1) "english" else "telugu"
+
+            android.util.Log.d("ProfileFragment", "Saving settings: theme=$themeMode, color=$accentColor, lang=$language")
+
+            // Persist to SharedPreferences FIRST for immediate access
+            val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
+            with(sharedPrefs.edit()) {
+                putString("theme_mode", themeMode)
+                putString("accent_color", accentColor)
+                putString("default_language", language)
+                putString("user_name", userName)
+                commit() // immediate persistence
+            }
+
+            // Then update database
+            try {
+                if (userName.isNotEmpty()) {
+                    repository.updateUserName(userName)
+                }
+                repository.updateThemeMode(themeMode)
+                repository.updateAccentColor(accentColor)
+                repository.updateDefaultLanguage(language)
+
+                // Apply changes immediately (each method now recreates ONLY if changed)
+                applyTheme(themeMode)
+                applyAccentColor(accentColor)
+                applyDefaultLanguage(language)
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), "Settings saved!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProfileFragment", "Error saving settings: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), "Error saving settings", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -189,55 +268,6 @@ class ProfileFragment : Fragment() {
                 .placeholder(R.drawable.ic_person_24)
                 .error(R.drawable.ic_person_24)
                 .into(profileImageView)
-        }
-    }
-
-    private fun saveSettings() {
-        val repository = (requireActivity().application as DivineApplication).repository
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            val userName = userNameEditText.text.toString()
-            if (userName.isNotEmpty()) {
-                repository.updateUserName(userName)
-            }
-
-            val themeMode = when (themeSpinner.selectedItemPosition) {
-                1 -> "light"
-                2 -> "dark"
-                else -> "system"
-            }
-            repository.updateThemeMode(themeMode)
-
-            val accentColor = when (accentColorSpinner.selectedItemPosition) {
-                1 -> "green"
-                2 -> "purple"
-                3 -> "orange"
-                4 -> "red"
-                else -> "blue"
-            }
-            repository.updateAccentColor(accentColor)
-
-            val language = if (languageSpinner.selectedItemPosition == 1) "english" else "telugu"
-            repository.updateDefaultLanguage(language)
-
-            android.util.Log.d("ProfileFragment", "Saving settings: theme=$themeMode, color=$accentColor, lang=$language")
-
-            // Apply changes immediately (each method now recreates ONLY if changed)
-            applyTheme(themeMode)
-            applyAccentColor(accentColor)
-            applyDefaultLanguage(language)
-
-            // Persist for immediate access
-            val sharedPrefs = requireContext().getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
-            with(sharedPrefs.edit()) {
-                putString("theme_mode", themeMode)
-                putString("accent_color", accentColor)
-                putString("default_language", language)
-                putString("user_name", userName)
-                commit() // immediate persistence
-            }
-
-            Toast.makeText(requireContext(), "Settings saved!", Toast.LENGTH_SHORT).show()
         }
     }
 

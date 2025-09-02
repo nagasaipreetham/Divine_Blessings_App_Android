@@ -15,8 +15,8 @@
         android:hint="Search songs or gods..."
         android:padding="12dp"
         android:layout_marginTop="16dp"
-        android:textColor="?android:attr/textColorPrimary"
-        android:textColorHint="?android:attr/textColorSecondary" />
+        android:textColor="@color/white"
+        android:textColorHint="@color/white" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/searchResultsRecyclerView"

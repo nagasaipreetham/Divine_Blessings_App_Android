@@ -146,8 +146,23 @@ class SearchAdapter(
         holder.title.text = item.title
         holder.godName.text = item.godName
 
+        // Tint heart icon based on favorite status
         val iconRes = if (item.isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
         holder.like.setImageResource(iconRes)
+        if (item.isFavorite) {
+            val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+            holder.like.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
+        } else {
+            // Reset tint for unfavorited items
+            holder.like.imageTintList = null
+        }
+
+        // Apply theme-based tinting to play button - use current accent color
+        val typedValue = android.util.TypedValue()
+        val theme = holder.itemView.context.theme
+        theme.resolveAttribute(androidx.appcompat.R.attr.colorPrimary, typedValue, true)
+        val accentColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, typedValue.resourceId)
+        holder.play.imageTintList = android.content.res.ColorStateList.valueOf(accentColor)
 
         holder.like.setOnClickListener {
             onToggleLike(item, !item.isFavorite)
@@ -157,6 +172,14 @@ class SearchAdapter(
                 items[position].isFavorite = !items[position].isFavorite
                 val iconRes = if (items[position].isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
                 holder.like.setImageResource(iconRes)
+                
+                // Update tint immediately
+                if (items[position].isFavorite) {
+                    val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+                    holder.like.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
+                } else {
+                    holder.like.imageTintList = null
+                }
             }
         }
         holder.play.setOnClickListener { onPlay(item) }

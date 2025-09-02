@@ -57,20 +57,32 @@ class DivineRepository(private val database: DivineDatabase) {
 
     // User settings operations
     fun getUserSettings(): Flow<UserSettings?> = database.userSettingsDao().getUserSettings()
-    
+
+    private suspend fun ensureSettingsExists() {
+        val dao = database.userSettingsDao()
+        val existing = dao.getUserSettings().first()
+        if (existing == null) {
+            dao.insertOrUpdateSettings(UserSettings())
+        }
+    }
+
     suspend fun updateUserName(userName: String) {
+        ensureSettingsExists()
         database.userSettingsDao().updateUserName(userName)
     }
-    
+
     suspend fun updateThemeMode(themeMode: String) {
+        ensureSettingsExists()
         database.userSettingsDao().updateThemeMode(themeMode)
     }
-    
+
     suspend fun updateAccentColor(accentColor: String) {
+        ensureSettingsExists()
         database.userSettingsDao().updateAccentColor(accentColor)
     }
-    
+
     suspend fun updateDefaultLanguage(language: String) {
+        ensureSettingsExists()
         database.userSettingsDao().updateDefaultLanguage(language)
     }
     

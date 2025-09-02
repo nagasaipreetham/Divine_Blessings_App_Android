@@ -181,9 +181,10 @@ class SongPlayerFragment : Fragment() {
         // Removed: insets padding that created bottom gap
         // (previous ViewCompat.setOnApplyWindowInsetsListener(bottomBar) block removed)
 
-        // Choose initial language from app default
-        val appDefaultLang = (requireActivity().application as com.example.divneblessing_v0.DivineApplication).getCurrentLanguage()
-        currentLang = if (appDefaultLang.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
+        // Initialize lyrics language from session (falls back to app default)
+        val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
+        val sessionLang = app.getCurrentLyricsLanguageOrDefault()
+        currentLang = if (sessionLang.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
         // Do not set btnLang.text here; loadLyrics() will set the correct label consistently
         loadLyrics(currentLang)
 
@@ -210,7 +211,9 @@ class SongPlayerFragment : Fragment() {
         // Language toggle
         btnLang.setOnClickListener {
             currentLang = if (currentLang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
-            // Do not set btnLang.text here; loadLyrics() will set it consistently
+            // Persist only for this app session (not global setting)
+            val app2 = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
+            app2.setCurrentLyricsLanguage(if (currentLang == Lang.ENGLISH) "english" else "telugu")
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
             loadLyrics(currentLang)
             // keep the highlight roughly in place based on current playback position

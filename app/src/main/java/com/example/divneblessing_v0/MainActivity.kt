@@ -48,7 +48,6 @@ class MainActivity : AppCompatActivity() {
 
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private var userSeeking = false
-    private var bottomInsetPx = 0
     private val ticker = object : Runnable {
         override fun run() {
             try {
@@ -89,8 +88,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         // Apply saved theme before setting content view
         applySavedTheme()
-        // Stop drawing behind system bars (no blending with status bar)
-        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -103,31 +100,6 @@ class MainActivity : AppCompatActivity() {
         miniPlay = findViewById(R.id.mini_player_play)
         miniElapsed = findViewById(R.id.mini_player_elapsed)
         miniTotal = findViewById(R.id.mini_player_total)
-
-        // NOTE: Removed edge-to-edge insets listeners for toolbar/bottomNav/miniContainer
-        // so content is fully within the app bounds and not overlapped by system bars.
-        ViewCompat.setOnApplyWindowInsetsListener(binding.topAppBar) { v, insets ->
-            val sb = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-            v.setPadding(v.paddingLeft, sb.top, v.paddingRight, v.paddingBottom)
-            insets
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { v, insets ->
-            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, sys.bottom)
-            bottomInsetPx = sys.bottom
-            updateMiniVisibility()
-            insets
-        }
-        miniContainer?.let { mini ->
-            ViewCompat.setOnApplyWindowInsetsListener(mini) { v, insets ->
-                val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-                // Lift the mini player above the nav bar by a few dp to avoid overlap
-                val extraLiftPx = (resources.displayMetrics.density * 8).toInt()
-                v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, sys.bottom + extraLiftPx)
-                updateMiniVisibility()
-                insets
-            }
-        }
 
         // Bind to service (lifetime of activity)
         try {
@@ -210,41 +182,41 @@ class MainActivity : AppCompatActivity() {
             updateMiniVisibility()
         }
 
-            binding.bottomNav.setOnItemSelectedListener { item ->
-                if (item.itemId == navController.currentDestination?.id) return@setOnItemSelectedListener true
-    
-                // Make nav between tabs instantaneous (no animation = snappy feel)
-                val options = androidx.navigation.NavOptions.Builder()
-                    .setLaunchSingleTop(true)
-                    .setRestoreState(true)
-                    .setPopUpTo(navController.graph.startDestinationId, false)
-                    .setEnterAnim(0)
-                    .setExitAnim(0)
-                    .setPopEnterAnim(0)
-                    .setPopExitAnim(0)
-                    .build()
-    
-                return@setOnItemSelectedListener try {
-                    navController.navigate(item.itemId, null, options)
-                    true
-                } catch (_: IllegalArgumentException) {
-                    navController.navigate(item.itemId, null)
-                    true
-                }
-            }
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            if (item.itemId == navController.currentDestination?.id) return@setOnItemSelectedListener true
 
-            binding.bottomNav.setOnItemReselectedListener { item ->
-                // Pop back to the root of the reselected destination
-                val root = when (item.itemId) {
-                    R.id.homeFragment -> R.id.homeFragment
-                    R.id.favoritesFragment -> R.id.favoritesFragment
-                    R.id.searchFragment -> R.id.searchFragment
-                    R.id.counterFragment -> R.id.counterFragment
-                    R.id.profileFragment -> R.id.profileFragment
-                    else -> navController.graph.startDestinationId
-                }
-                navController.popBackStack(root, false)
+            // Make nav between tabs instantaneous (no animation = snappy feel)
+            val options = androidx.navigation.NavOptions.Builder()
+                .setLaunchSingleTop(true)
+                .setRestoreState(true)
+                .setPopUpTo(navController.graph.startDestinationId, false)
+                .setEnterAnim(0)
+                .setExitAnim(0)
+                .setPopEnterAnim(0)
+                .setPopExitAnim(0)
+                .build()
+
+            return@setOnItemSelectedListener try {
+                navController.navigate(item.itemId, null, options)
+                true
+            } catch (_: IllegalArgumentException) {
+                navController.navigate(item.itemId, null)
+                true
             }
+        }
+
+        binding.bottomNav.setOnItemReselectedListener { item ->
+            // Pop back to the root of the reselected destination
+            val root = when (item.itemId) {
+                R.id.homeFragment -> R.id.homeFragment
+                R.id.favoritesFragment -> R.id.favoritesFragment
+                R.id.searchFragment -> R.id.searchFragment
+                R.id.counterFragment -> R.id.counterFragment
+                R.id.profileFragment -> R.id.profileFragment
+                else -> navController.graph.startDestinationId
+            }
+            navController.popBackStack(root, false)
+        }
 
         // Hide bottom nav on full player to allow the timeline to hug the system navigator
         val onPlayer = isOnFullPlayer()
@@ -325,7 +297,7 @@ class MainActivity : AppCompatActivity() {
         } else 0
 
         val extra = if (miniVisible) (miniContainer?.height ?: 0) else 0
-        params.bottomMargin = bottomInsetPx + basePx + extra
+        params.bottomMargin = basePx + extra
         binding.navHostFragment.layoutParams = params
     }
 

@@ -97,11 +97,17 @@ class FavoritesAdapter(
         holder.title.text = "${position + 1}. ${item.title}"
         holder.godName.text = item.godName
         
-        // Always show filled heart in favorites
+        // Always show filled heart in favorites with red tint
         holder.like.setImageResource(R.drawable.ic_heart_filled_24)
+        val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+        holder.like.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
 
-        val iconRes = if (item.isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
-        holder.like.setImageResource(iconRes)
+        // Apply theme-based tinting to play button - use current accent color
+        val typedValue = android.util.TypedValue()
+        val theme = holder.itemView.context.theme
+        theme.resolveAttribute(androidx.appcompat.R.attr.colorPrimary, typedValue, true)
+        val accentColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, typedValue.resourceId)
+        holder.play.imageTintList = android.content.res.ColorStateList.valueOf(accentColor)
 
         holder.like.setOnClickListener {
             onToggleLike(item, !item.isFavorite)

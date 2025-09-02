@@ -2,7 +2,6 @@ package com.example.divneblessing_v0.data
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
-
 // DAOs (Data Access Objects)
 @Dao
 interface GodDao {
