@@ -7,8 +7,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.navigation.NavController
-import androidx.navigation.NavDestination
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.example.divneblessing_v0.databinding.ActivityMainBinding
@@ -92,6 +90,13 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Add window insets padding to the root 'main' view
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, 0)
+            insets
+        }
+
         // Resolve mini player views
         miniContainer = findViewById(R.id.mini_player_container)
         miniTitle = findViewById(R.id.mini_player_title)
@@ -100,6 +105,9 @@ class MainActivity : AppCompatActivity() {
         miniPlay = findViewById(R.id.mini_player_play)
         miniElapsed = findViewById(R.id.mini_player_elapsed)
         miniTotal = findViewById(R.id.mini_player_total)
+
+        // Ensure mini player draws above BottomNavigationView
+        miniContainer?.elevation = (binding.bottomNav.elevation.takeIf { it != 0f } ?: 8f) + 1f
 
         // Bind to service (lifetime of activity)
         try {
@@ -172,11 +180,11 @@ class MainActivity : AppCompatActivity() {
             val title = destination.label?.toString().orEmpty()
             binding.topAppBar.title = title
             supportActionBar?.title = title
-    
+
             // Hide bottom nav on full player, show otherwise
             val onPlayer = destination.id == R.id.songPlayerFragment
             binding.bottomNav.visibility = if (onPlayer) View.GONE else View.VISIBLE
-    
+
             // Refresh mini player visibility whenever destination changes
             // Shows when: service has a song loaded or is playing, and we are NOT on the full player
             updateMiniVisibility()
@@ -299,6 +307,13 @@ class MainActivity : AppCompatActivity() {
         val extra = if (miniVisible) (miniContainer?.height ?: 0) else 0
         params.bottomMargin = basePx + extra
         binding.navHostFragment.layoutParams = params
+
+        // Position the mini player ABOVE the bottom nav when both are visible
+        val miniParams = (miniContainer?.layoutParams as? androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams)
+        if (miniParams != null) {
+            miniParams.bottomMargin = if (bottomNavVisible) basePx else 0
+            miniContainer?.layoutParams = miniParams
+        }
     }
 
     private fun isOnFullPlayer(): Boolean {

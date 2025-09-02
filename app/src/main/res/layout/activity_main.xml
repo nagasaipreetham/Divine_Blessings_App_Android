@@ -16,17 +16,17 @@
         android:titleTextColor="@android:color/white"
         app:layout_scrollFlags="scroll|enterAlways" />
 
-    <!-- NavHost -->
+    <!-- NavHost Fragment -->
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_host_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginTop="?attr/actionBarSize"
-        android:layout_marginBottom="80dp"
         app:defaultNavHost="true"
         app:navGraph="@navigation/nav_graph"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+
     <!-- Mini Player (collapsed player) -->
     <include
         android:id="@+id/mini_player_container"
@@ -34,9 +34,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:visibility="gone"
-        android:layout_gravity="bottom"
-        android:layout_marginBottom="80dp" />
-        <!-- Bottom Navigation -->
+        android:layout_gravity="bottom" />
+
+    <!-- Bottom Navigation -->
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
@@ -47,9 +47,6 @@
         app:itemIconTint="@color/bottom_nav_tint"
         app:itemTextColor="@color/bottom_nav_tint"
         android:background="@color/bottom_bar_bg"
-        android:paddingBottom="0dp"
         app:layout_behavior="com.google.android.material.behavior.HideBottomViewOnScrollBehavior" />
-
-
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
