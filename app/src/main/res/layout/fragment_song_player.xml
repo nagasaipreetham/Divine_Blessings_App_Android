@@ -38,7 +38,7 @@
         android:gravity="center"
         android:orientation="vertical"
         android:paddingEnd="0dp">
-    
+
         <!-- Inside the right-rail container, update only the toggle button -->
         <Button
             android:id="@+id/btnLangToggle"
@@ -51,7 +51,7 @@
             android:padding="4dp"
             android:gravity="center"
             android:includeFontPadding="true" />
-    
+
         <Space
             android:layout_width="0dp"
             android:layout_height="8dp" />

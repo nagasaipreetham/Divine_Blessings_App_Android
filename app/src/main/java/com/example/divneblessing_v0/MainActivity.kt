@@ -13,6 +13,7 @@ import com.example.divneblessing_v0.databinding.ActivityMainBinding
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import android.view.WindowManager
 
 class MainActivity : AppCompatActivity() {
 
@@ -89,6 +90,17 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Keep bottom navigation fixed; let IME overlay instead of shifting layout
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+
+        // Ensure content isn't hidden by the keyboard: apply bottom padding to content area when IME is visible
+        ViewCompat.setOnApplyWindowInsetsListener(binding.navHostFragment) { v, insets ->
+            val imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val bottomPadding = imeInsets.bottom // > 0 only when keyboard is visible
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, bottomPadding)
+            insets
+        }
 
         // Add window insets padding to the root 'main' view
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
