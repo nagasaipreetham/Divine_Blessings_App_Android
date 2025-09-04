@@ -45,6 +45,37 @@ class DivineApplication : Application() {
                 val newGods = repository.getAllGods().first()
                 android.util.Log.d("DivineApplication", "After insertion: ${newGods.size} gods")
             }
+
+            // Insert Shiva + Lingashtakam if not present (safe, runs once)
+            val newGodId = "god_shiva"
+            val newSongId = "Lingashtakam"
+
+            if (repository.getGodById(newGodId) == null) {
+                repository.insertGod(
+                    com.example.divneblessing_v0.data.God(
+                        id = newGodId,
+                        name = "Lord Shiva",
+                        imageFileName = "shiva.png",
+                        displayOrder = 2 // show after existing Vishnu (which is 1)
+                    )
+                )
+            }
+
+            if (repository.getSongById(newSongId) == null) {
+                repository.insertSong(
+                    com.example.divneblessing_v0.data.Song(
+                        id = newSongId, // must match asset filenames
+                        title = "Lingashtakam",
+                        godId = newGodId,
+                        languageDefault = "telugu", // default selection in UI; can be "english"
+                        audioFileName = "Lingashtakam.mp3", // kept for consistency
+                        lyricsTeluguFileName = "Lingashtakam_te.lrc",
+                        lyricsEnglishFileName = "Lingashtakam_en.lrc",
+                        duration = 0, // optional; player reads actual duration
+                        displayOrder = 1
+                    )
+                )
+            }
         }
     }
 

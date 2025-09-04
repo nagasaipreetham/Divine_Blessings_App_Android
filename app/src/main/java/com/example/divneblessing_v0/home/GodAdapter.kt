@@ -9,7 +9,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.example.divneblessing_v0.R
 import com.example.divneblessing_v0.data.GodItem
-import java.io.File
 
 class GodAdapter(
     private var items: MutableList<GodItem>,
@@ -35,11 +34,11 @@ class GodAdapter(
         try {
             Glide.with(holder.img.context)
                 .load("file:///android_asset/images/${item.imageFileName}")
-                .placeholder(R.drawable.sample_vishnu)
-                .error(R.drawable.sample_vishnu)
+                .placeholder(R.drawable.img_loader)
+                .error(R.drawable.img_loader)
                 .into(holder.img)
         } catch (e: Exception) {
-            holder.img.setImageResource(R.drawable.sample_vishnu)
+            holder.img.setImageResource(R.drawable.img_loader)
         }
         
         holder.title.text = item.name

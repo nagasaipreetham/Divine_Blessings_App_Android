@@ -57,11 +57,11 @@ class GodCategoryFragment : Fragment() {
         try {
             Glide.with(this)
                 .load("file:///android_asset/images/$godImageFileName")
-                .placeholder(R.drawable.sample_vishnu)
-                .error(R.drawable.sample_vishnu)
+                .placeholder(R.drawable.img_loader)
+                .error(R.drawable.img_loader)
                 .into(headerImage)
         } catch (e: Exception) {
-            headerImage.setImageResource(R.drawable.sample_vishnu)
+            headerImage.setImageResource(R.drawable.img_loader)
         }
 
         val recyclerView = view.findViewById<RecyclerView>(R.id.recycler_songs)

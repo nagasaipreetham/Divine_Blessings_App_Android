@@ -8,12 +8,10 @@ class DivineRepository(private val database: DivineDatabase) {
 
     // God operations
     fun getAllGods(): Flow<List<God>> = database.godDao().getAllGods()
-    
     suspend fun getGodById(godId: String): God? = database.godDao().getGodById(godId)
 
     // Song operations
     fun getSongsByGod(godId: String): Flow<List<Song>> = database.songDao().getSongsByGod(godId)
-    
     suspend fun getSongById(songId: String): Song? = database.songDao().getSongById(songId)
     
     fun searchSongs(query: String): Flow<List<SongWithGod>> = database.songDao().searchSongs(query)
@@ -178,5 +176,14 @@ class DivineRepository(private val database: DivineDatabase) {
         }
         
         android.util.Log.d("Repository", "Sample data insertion completed")
+    }
+
+    // Public insert helpers (safe passthroughs)
+    suspend fun insertGod(god: God) {
+        database.godDao().insertGod(god)
+    }
+
+    suspend fun insertSong(song: Song) {
+        database.songDao().insertSong(song)
     }
 }

@@ -10,7 +10,7 @@
       </SelectionState>
       <SelectionState runConfigName="divneblessing_v0.app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-09-03T09:20:43.441829300Z">
+        <DropdownSelection timestamp="2025-09-04T17:49:16.681714700Z">
           <Target type="DEFAULT_BOOT">
             <handle>
               <DeviceId pluginId="PhysicalDevice" identifier="serial=9a5e690c" />
