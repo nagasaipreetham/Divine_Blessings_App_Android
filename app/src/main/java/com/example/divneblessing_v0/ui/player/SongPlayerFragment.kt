@@ -72,12 +72,17 @@ class SongPlayerFragment : Fragment() {
     private var serviceBound = false
     private var hasAudio = false
     private var userSeeking = false
-    
+    private var userScrollingLyrics = false
+    private var autoCenterEnabled = true
+    private var lastCenteredIndex = -1
+    private var lastPlaybackMs = 0
+
     private val ui = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
             updateProgressAndHighlight()
-            ui.postDelayed(this, 250) // Reduced update frequency from 100ms to 250ms to reduce lag
+            // Near real-time updates (~60fps). Adjust if needed for performance.
+            ui.postDelayed(this, 16)
         }
     }
 
@@ -179,6 +184,22 @@ class SongPlayerFragment : Fragment() {
         adapter = LyricsAdapter(emptyList())
         lyricsList.adapter = adapter
 
+        // Pause auto-centering when user scrolls. Do NOT auto-resume later.
+        lyricsList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                when (newState) {
+                    RecyclerView.SCROLL_STATE_DRAGGING, RecyclerView.SCROLL_STATE_SETTLING -> {
+                        userScrollingLyrics = true
+                        autoCenterEnabled = false // disable until user explicitly re-enables
+                    }
+                    RecyclerView.SCROLL_STATE_IDLE -> {
+                        userScrollingLyrics = false
+                        // Do not auto-resume centering here
+                    }
+                }
+            }
+        })
+
         // Initialize lyrics language from session (falls back to app default)
         val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
         val sessionLang = app.getCurrentLyricsLanguageOrDefault()
@@ -211,6 +232,7 @@ class SongPlayerFragment : Fragment() {
             val app2 = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
             app2.setCurrentLyricsLanguage(if (currentLang == Lang.ENGLISH) "english" else "telugu")
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
+            autoCenterEnabled = true
             loadLyrics(currentLang)
             highlightForTime(pos)
         }
@@ -218,14 +240,13 @@ class SongPlayerFragment : Fragment() {
         // NEW: Play/Pause click handler
         btnPlay.setOnClickListener {
             if (!hasAudio && serviceBound) {
-                // If UI wasn’t initialized yet, try to set it up
                 setupAudio()
             }
             val playing = mediaPlayerService?.togglePlayPause() ?: false
             btnPlay.setImageResource(if (playing) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
         }
 
-        // NEW: SeekBar change listener
+        // SeekBar change listener
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(sb: SeekBar) {
                 userSeeking = true
@@ -234,7 +255,9 @@ class SongPlayerFragment : Fragment() {
                 val pos = sb.progress
                 mediaPlayerService?.seekTo(pos)
                 userSeeking = false
-                highlightForTime(pos)
+                // Re-enable and force-center after any seek (forward/backward)
+                autoCenterEnabled = true
+                forceCenterForTime(pos)
             }
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
@@ -243,10 +266,11 @@ class SongPlayerFragment : Fragment() {
             }
         })
 
-        // NEW: Locate current lyric line
+        // Locate current lyric line: force-center now and re-enable auto-centering
         btnLocate.setOnClickListener {
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
-            highlightForTime(pos)
+            autoCenterEnabled = true
+            forceCenterForTime(pos)
         }
 
         // Toggle "no lyrics" message
@@ -342,34 +366,65 @@ class SongPlayerFragment : Fragment() {
             if (parsed != null) break
         }
 
-        lines = parsed ?: emptyList()
+        // Drop leading blank lines to remove the top gap
+        lines = (parsed ?: emptyList()).dropWhile { it.text.isBlank() }
         android.util.Log.d("SongPlayer", "Parsed lyrics lines: ${lines.size}")
         adapter.submit(lines)
 
-        // Toggle "no lyrics" message
-        txtNoLyrics.isVisible = lines.isEmpty()
+        // Re-enable and immediately sync highlight + center
+        autoCenterEnabled = true
+        val curPos = mediaPlayerService?.getCurrentPosition() ?: 0
+        highlightForTime(curPos)
 
-        // Ensure lyrics visible
+        txtNoLyrics.isVisible = lines.isEmpty()
         if (lines.isNotEmpty()) {
             lyricsList.post { lyricsList.scrollToPosition(0) }
         }
     }
 
     private fun highlightForTime(ms: Int) {
-        adapter.highlightFor(ms)?.let { idx ->
-            // Keep highlighted item in view if it's far off-screen
-            val lm = lyricsList.layoutManager as LinearLayoutManager
-            val first = lm.findFirstVisibleItemPosition()
-            val last = lm.findLastVisibleItemPosition()
+        val idx = adapter.highlightFor(ms) ?: return
 
-            // Auto-scroll to keep highlighted line in center view
-            if (idx < first || idx > last) {
-                lm.scrollToPositionWithOffset(idx, (lyricsList.height * 0.4).toInt())
-            } else if (idx == first || idx == last) {
-                // Smooth scroll to keep highlighted line in better position
-                lm.scrollToPositionWithOffset(idx, (lyricsList.height * 0.4).toInt())
+        // Only auto-center when explicitly enabled and not during user scroll
+        val canAutoCenter = autoCenterEnabled && !userScrollingLyrics
+        if (!canAutoCenter) return
+
+        val lm = lyricsList.layoutManager as LinearLayoutManager
+        val first = lm.findFirstVisibleItemPosition()
+        val last = lm.findLastVisibleItemPosition()
+        val visibleCount = if (first >= 0 && last >= first) last - first + 1 else 0
+        val middleIdx = if (visibleCount > 0) first + visibleCount / 2 else -1
+
+        // Target a slightly above-middle position (adaptive to screen size)
+        val targetRatio = 0.42f
+
+        // Center when highlighted line reaches/passes the middle area
+        if (middleIdx == -1 || idx >= middleIdx) {
+            val view = lm.findViewByPosition(idx)
+            val offset = if (view != null) {
+                ((lyricsList.height * targetRatio).toInt()) - (view.height / 2)
+            } else {
+                ((lyricsList.height * targetRatio).toInt())
             }
+            lm.scrollToPositionWithOffset(idx, offset)
+            lastCenteredIndex = idx
         }
+    }
+
+    // Force-center regardless of user-scrolling state (used by Seek and Locate)
+    private fun forceCenterForTime(ms: Int) {
+        val idx = adapter.indexForTime(ms)
+        if (idx < 0) return
+        val lm = lyricsList.layoutManager as LinearLayoutManager
+        val view = lm.findViewByPosition(idx)
+        val targetRatio = 0.42f
+        val offset = if (view != null) {
+            ((lyricsList.height * targetRatio).toInt()) - (view.height / 2)
+        } else {
+            ((lyricsList.height * targetRatio).toInt())
+        }
+        lm.scrollToPositionWithOffset(idx, offset)
+        lastCenteredIndex = idx
     }
 
     private fun updateProgressAndHighlight() {
@@ -380,12 +435,17 @@ class SongPlayerFragment : Fragment() {
                 if (!userSeeking) {
                     seek.progress = cur
                 }
-                
-                // Only update highlight every other time to reduce UI load
-                if (System.currentTimeMillis() % 500 < 250) {
-                    highlightForTime(cur)
+
+                // Highlight on every tick (16ms interval)
+                highlightForTime(cur)
+
+                // If there is a large jump (forward or backward), force-center when enabled
+                val jump = kotlin.math.abs(cur - lastPlaybackMs)
+                if (jump > 800 && autoCenterEnabled && !userScrollingLyrics) {
+                    forceCenterForTime(cur)
                 }
-                
+                lastPlaybackMs = cur
+
                 // Update play/pause button state
                 val isPlaying = mediaPlayerService?.isPlaying() ?: false
                 btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause_24 else R.drawable.ic_play_24)

@@ -10,7 +10,7 @@ package com.example.divneblessing_v0.ui.player
  */
 object LrcParser {
 
-    private val timeRegex = Regex("""\[(\d{1,2}):(\d{1,2})(?:\.(\d{1,2}))?]""")
+    private val timeRegex = Regex("""\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
 
     fun parse(lines: List<String>): List<LrcLine> {
         val out = mutableListOf<LrcLine>()
@@ -20,13 +20,17 @@ object LrcParser {
             val timeMs = matches.firstOrNull()?.let { m ->
                 val mm = m.groupValues[1].toInt()
                 val ss = m.groupValues[2].toInt()
-                val cc = m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }?.toIntOrNull() ?: 0
-                (mm * 60 + ss) * 1000 + (if (cc < 100) cc * 10 else cc) // support .xx
+                val frac = m.groupValues.getOrNull(3)?.takeIf { it.isNotBlank() }
+                val extraMs = when (frac?.length ?: 0) {
+                    1 -> (frac!!.toIntOrNull() ?: 0) * 100     // .x → deciseconds
+                    2 -> (frac!!.toIntOrNull() ?: 0) * 10      // .xx → centiseconds
+                    3 -> (frac!!.toIntOrNull() ?: 0)           // .xxx → milliseconds
+                    else -> 0
+                }
+                (mm * 60 + ss) * 1000 + extraMs
             }
-            // If line contains no timestamp, keep it as a static (null time)
             out.add(LrcLine(timeMs = timeMs, text = text))
         }
-        // Sort by time, keep non-timed lines in original order (they'll stay unhighlighted)
         return out.sortedWith(compareBy(nullsFirst()) { it.timeMs })
     }
 }

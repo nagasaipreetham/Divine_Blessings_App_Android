@@ -19,6 +19,7 @@
         android:contentDescription="@string/back" />
 
     <!-- Lyrics list -->
+    <!-- RecyclerView section only -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_lyrics"
         android:layout_width="match_parent"
