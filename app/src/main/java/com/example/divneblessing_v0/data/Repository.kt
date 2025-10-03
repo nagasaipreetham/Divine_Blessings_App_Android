@@ -3,6 +3,9 @@ package com.example.divneblessing_v0.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import android.content.Context
+import java.io.File
+import java.security.MessageDigest
 
 class DivineRepository(private val database: DivineDatabase) {
 
@@ -185,5 +188,144 @@ class DivineRepository(private val database: DivineDatabase) {
 
     suspend fun insertSong(song: Song) {
         database.songDao().insertSong(song)
+    }
+
+    /**
+     * Reconcile DB with APK assets and mirror assets into filesDir for future updates.
+     * - Scans audio, lyrics, and common image folders in assets
+     * - Upserts "assets" source entries into the assets table
+     * - Copies assets to filesDir/content/<type>/... and upserts "files" source entries with checksum/version
+     */
+    suspend fun reconcileAssets(context: android.content.Context) {
+        val am = context.assets
+        val now = System.currentTimeMillis()
+
+        val scanTargets = listOf(
+            "audio" to "audio",
+            "lyrics" to "lyrics",
+            "images" to "image",
+            "images/gods" to "image"
+        )
+
+        for ((folder, type) in scanTargets) {
+            // Recursively list only files (skip directories)
+            val filePaths = listAssetFilesRecursively(am, folder)
+
+            for (relPath in filePaths) {
+                val size = safeSize(am, relPath) ?: 0L
+                val checksum = safeChecksum(am, relPath)
+
+                database.assetDao().upsert(
+                    ContentAsset(
+                        path = relPath,
+                        type = type,
+                        version = 1,
+                        checksum = checksum,
+                        sizeBytes = size,
+                        lastUpdated = now,
+                        source = "assets"
+                    )
+                )
+
+                // Mirror into filesDir/content/<type>/<subpath>
+                val subPath = relPath.removePrefix("$folder/")
+                val destFile = java.io.File(context.filesDir, "content/$type/$subPath")
+                destFile.parentFile?.mkdirs()
+
+                val needsCopy = !destFile.exists() || checksum == null || checksum != safeFileChecksum(destFile)
+                if (needsCopy) {
+                    try {
+                        copyAssetToFile(am, relPath, destFile)
+                        val fileChecksum = safeFileChecksum(destFile)
+                        val existingFilesEntry = database.assetDao()
+                            .getByType(type)
+                            .find { it.path == relPath && it.source == "files" }
+
+                        val nextVersion = (existingFilesEntry?.version ?: 0) + 1
+                        database.assetDao().upsert(
+                            ContentAsset(
+                                path = relPath,
+                                type = type,
+                                version = if (existingFilesEntry == null) 1 else nextVersion,
+                                checksum = fileChecksum,
+                                sizeBytes = destFile.length(),
+                                lastUpdated = System.currentTimeMillis(),
+                                source = "files"
+                            )
+                        )
+                    } catch (_: Exception) {
+                        // Skip problematic asset; avoid crashing app on startup
+                    }
+                }
+            }
+        }
+    }
+
+    // Recursively list files under an assets directory path (returns full relative paths)
+    private fun listAssetFilesRecursively(am: android.content.res.AssetManager, dir: String): List<String> {
+        val result = mutableListOf<String>()
+
+        fun recurse(path: String) {
+            val children = try { am.list(path) } catch (_: Exception) { null }
+            if (children == null || children.isEmpty()) {
+                // If no children, try opening: if success, it's a file
+                try {
+                    am.open(path).close()
+                    result.add(path)
+                } catch (_: Exception) {
+                    // Not a file (or not accessible), skip
+                }
+            } else {
+                for (child in children) {
+                    val childPath = if (path.isEmpty()) child else "$path/$child"
+                    recurse(childPath)
+                }
+            }
+        }
+
+        recurse(dir)
+        return result
+    }
+
+    private fun safeList(am: android.content.res.AssetManager, dir: String): Array<String> {
+        return try { am.list(dir) ?: emptyArray() } catch (_: Exception) { emptyArray() }
+    }
+    private fun safeSize(am: android.content.res.AssetManager, relPath: String): Long? {
+        return try { am.openFd(relPath).length } catch (_: Exception) {
+            try { am.open(relPath).use { it.available().toLong() } } catch (_: Exception) { null }
+        }
+    }
+    private fun safeChecksum(am: android.content.res.AssetManager, relPath: String): String? {
+        return try {
+            am.open(relPath).use { input ->
+                val buf = ByteArray(8192)
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                var read: Int
+                while (true) {
+                    read = input.read(buf)
+                    if (read <= 0) break
+                    digest.update(buf, 0, read)
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        } catch (_: Exception) { null }
+    }
+    private fun safeFileChecksum(file: java.io.File): String? {
+        return try {
+            file.inputStream().use { input ->
+                val buf = ByteArray(8192)
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                var read: Int
+                while (true) {
+                    read = input.read(buf)
+                    if (read <= 0) break
+                    digest.update(buf, 0, read)
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        } catch (_: Exception) { null }
+    }
+    private fun copyAssetToFile(am: android.content.res.AssetManager, relPath: String, dest: java.io.File) {
+        am.open(relPath).use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
     }
 }

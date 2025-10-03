@@ -200,10 +200,10 @@ class SongPlayerFragment : Fragment() {
             }
         })
 
-        // Initialize lyrics language from session (falls back to app default)
+        // Initialize lyrics language: per-song override if present, else Profile default language
         val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
-        val sessionLang = app.getCurrentLyricsLanguageOrDefault()
-        currentLang = if (sessionLang.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
+        val langStr = app.getLyricsLanguageForSong(songId) // "telugu" or "english"
+        currentLang = if (langStr.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
         loadLyrics(currentLang)
 
         // Counter init (per song, session-only)
@@ -230,7 +230,9 @@ class SongPlayerFragment : Fragment() {
         btnLang.setOnClickListener {
             currentLang = if (currentLang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
             val app2 = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
-            app2.setCurrentLyricsLanguage(if (currentLang == Lang.ENGLISH) "english" else "telugu")
+            val chosen = if (currentLang == Lang.ENGLISH) "english" else "telugu"
+            app2.setLyricsOverride(songId, chosen)
+
             val pos = mediaPlayerService?.getCurrentPosition() ?: 0
             autoCenterEnabled = true
             loadLyrics(currentLang)

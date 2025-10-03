@@ -2,6 +2,9 @@ package com.example.divneblessing_v0.data
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
 // DAOs (Data Access Objects)
 @Dao
 interface GodDao {
@@ -111,9 +114,10 @@ data class SongWithGod(
         Song::class,
         Favorite::class,
         SongCounter::class,
-        UserSettings::class
+        UserSettings::class,
+        ContentAsset::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -122,10 +126,30 @@ abstract class DivineDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun songCounterDao(): SongCounterDao
     abstract fun userSettingsDao(): UserSettingsDao
+    abstract fun assetDao(): AssetDao
 
     companion object {
         @Volatile
         private var INSTANCE: DivineDatabase? = null
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS assets (
+                        path TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        checksum TEXT,
+                        sizeBytes INTEGER NOT NULL,
+                        lastUpdated INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        PRIMARY KEY(path, source)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
 
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -133,10 +157,27 @@ abstract class DivineDatabase : RoomDatabase() {
                     context.applicationContext,
                     DivineDatabase::class.java,
                     "divine_database"
-                ).build()
+                )
+                .addMigrations(MIGRATION_1_2)
+                .build()
                 INSTANCE = instance
                 instance
             }
         }
     }
+}
+
+@Dao
+interface AssetDao {
+    @Query("SELECT * FROM assets")
+    suspend fun getAll(): List<ContentAsset>
+
+    @Query("SELECT * FROM assets WHERE type = :type")
+    suspend fun getByType(type: String): List<ContentAsset>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(asset: ContentAsset)
+
+    @Query("DELETE FROM assets WHERE path = :path AND source = :source")
+    suspend fun deleteByPathAndSource(path: String, source: String)
 }

@@ -3,89 +3,74 @@ package com.example.divneblessing_v0
 import android.app.Application
 import com.example.divneblessing_v0.data.DivineDatabase
 import com.example.divneblessing_v0.data.DivineRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 
 class DivineApplication : Application() {
 
-    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    // Database instance
-    val database by lazy { DivineDatabase.getDatabase(this) }
-
-    // Repository instance
-    val repository by lazy { DivineRepository(database) }
-
-    // Current language setting
+    lateinit var repository: DivineRepository
+    private var currentLyricsLanguage: String = "telugu"
     private var currentLanguage: String = "telugu"
-
-    // Session-only: remember the lyrics language chosen inside the player
-    private var currentLyricsLanguage: String? = null
+    private val applicationScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+    private val lyricsOverrides: MutableMap<String, String> = mutableMapOf() // songId -> "telugu"/"english"
 
     override fun onCreate() {
         super.onCreate()
-        // Load saved language preference
+        val db = DivineDatabase.getDatabase(this)
+        repository = DivineRepository(db)
+
         val sharedPrefs = getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
         currentLanguage = sharedPrefs.getString("default_language", "telugu") ?: "telugu"
 
-        // Initialize database with default settings and sample data
         applicationScope.launch {
-            android.util.Log.d("DivineApplication", "Initializing database...")
             repository.initializeDefaultSettings()
-            
-            // Check if we need to insert sample data (only if gods table is empty)
+
+            // Seed data if empty
             val gods = repository.getAllGods().first()
-            android.util.Log.d("DivineApplication", "Found ${gods.size} gods in database")
             if (gods.isEmpty()) {
-                android.util.Log.d("DivineApplication", "Inserting sample data...")
                 repository.insertSampleData()
-                val newGods = repository.getAllGods().first()
-                android.util.Log.d("DivineApplication", "After insertion: ${newGods.size} gods")
             }
 
-            // Insert Shiva + Lingashtakam if not present (safe, runs once)
+            // Optional: insert Shiva + Lingashtakam if missing
             val newGodId = "god_shiva"
             val newSongId = "Lingashtakam"
-
             if (repository.getGodById(newGodId) == null) {
                 repository.insertGod(
                     com.example.divneblessing_v0.data.God(
                         id = newGodId,
                         name = "Lord Shiva",
                         imageFileName = "shiva.png",
-                        displayOrder = 2 // show after existing Vishnu (which is 1)
+                        displayOrder = 2
                     )
                 )
             }
-
             if (repository.getSongById(newSongId) == null) {
                 repository.insertSong(
                     com.example.divneblessing_v0.data.Song(
-                        id = newSongId, // must match asset filenames
+                        id = newSongId,
                         title = "Lingashtakam",
                         godId = newGodId,
-                        languageDefault = "telugu", // default selection in UI; can be "english"
-                        audioFileName = "Lingashtakam.mp3", // kept for consistency
+                        languageDefault = "telugu",
+                        audioFileName = "Lingashtakam.mp3",
                         lyricsTeluguFileName = "Lingashtakam_te.lrc",
                         lyricsEnglishFileName = "Lingashtakam_en.lrc",
-                        duration = 0, // optional; player reads actual duration
+                        duration = 0,
                         displayOrder = 1
                     )
                 )
             }
+
+            // Asset catalog reconciliation and mirroring into filesDir
+            repository.reconcileAssets(this@DivineApplication)
         }
     }
 
     fun updateLanguage(language: String) {
         if (currentLanguage != language) {
             currentLanguage = language
-            android.util.Log.d("DivineApplication", "Language updated to: $language")
-            applicationScope.launch {
-                repository.updateDefaultLanguage(language)
-            }
+            applicationScope.launch { repository.updateDefaultLanguage(language) }
         }
     }
 
@@ -93,12 +78,21 @@ class DivineApplication : Application() {
         return currentLanguage
     }
 
-    // Session player-language helpers
+    // Per-song override: if present, use it; otherwise use profile default language
+    fun getLyricsLanguageForSong(songId: String): String {
+        return lyricsOverrides[songId] ?: currentLanguage
+    }
+
+    fun setLyricsOverride(songId: String, language: String) {
+        // language must be "telugu" or "english"
+        lyricsOverrides[songId] = language.lowercase()
+    }
+
     fun setCurrentLyricsLanguage(language: String) {
         currentLyricsLanguage = language
     }
 
     fun getCurrentLyricsLanguageOrDefault(): String {
-        return currentLyricsLanguage ?: currentLanguage
+        return currentLyricsLanguage
     }
 }

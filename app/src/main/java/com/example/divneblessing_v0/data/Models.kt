@@ -71,3 +71,18 @@ data class SearchResult(
     val godName: String,
     var isFavorite: Boolean = false
 )
+
+
+@Entity(
+    tableName = "assets",
+    primaryKeys = ["path", "source"]
+)
+data class ContentAsset(
+    val path: String,            // e.g., "audio/song_1.mp3", "lyrics/song_1_en.lrc", "images/gods/vishnu.png"
+    val type: String,            // "audio", "lyrics", "image"
+    val version: Int = 1,        // versioning for updates
+    val checksum: String? = null,// SHA-256 checksum
+    val sizeBytes: Long = 0L,    // file size in bytes
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val source: String = "assets" // "assets" (APK) or "files" (filesDir)
+)
