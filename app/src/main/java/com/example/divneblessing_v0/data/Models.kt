@@ -86,3 +86,14 @@ data class ContentAsset(
     val lastUpdated: Long = System.currentTimeMillis(),
     val source: String = "assets" // "assets" (APK) or "files" (filesDir)
 )
+
+
+// Dedicated lyrics table: one row per (songId, language), stores preprocessed lines as JSON
+@Entity(tableName = "lyrics", primaryKeys = ["songId", "language"])
+data class LyricsEntry(
+    val songId: String,
+    val language: String, // "telugu" or "english"
+    val jsonLines: String, // JSON array of { t: Int (ms) or -1 for untimed, x: String }
+    val updatedAt: Long = System.currentTimeMillis(),
+    val source: String = "assets" // "assets" or "files", future-proof
+)

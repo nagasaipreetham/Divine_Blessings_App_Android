@@ -38,8 +38,10 @@ import com.google.android.material.appbar.MaterialToolbar
 object SessionCounters {
     private val map = mutableMapOf<String, Int>()
     fun get(id: String) = map[id] ?: 0
-    fun set(id: String, v: Int) { map[id] = max(0, v) }
+    fun set(id: String, v: Int) { map[id] = kotlin.math.max(0, v) }
     fun reset(id: String) { map[id] = 0 }
+    // Reset all in-memory counters when app UI is freshly opened
+    fun resetAll() { map.clear() }
 }
 
 class SongPlayerFragment : Fragment() {
@@ -336,36 +338,56 @@ class SongPlayerFragment : Fragment() {
         val langFolder = if (lang == Lang.TELUGU) "telugu" else "english"
         val code = if (lang == Lang.TELUGU) "te" else "en"
 
-        fun tryOpen(path: String): List<LrcLine>? {
-            return runCatching {
-                requireContext().assets.open(path).use { input ->
-                    java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
-                        val raw = br.readLines()
-                        LrcParser.parse(raw)
-                    }
-                }
-            }.getOrNull()
-        }
-
-        // Try multiple paths: new format with folder, old format, then cross-language fallback
-        val candidates = listOf(
-            "lyrics/$langFolder/${songId}_${code}.lrc",
-            "lyrics/${songId}_${code}.lrc"
-        ) + run {
-            val otherLang = if (lang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
-            val otherFolder = if (otherLang == Lang.TELUGU) "telugu" else "english"
-            val otherCode = if (otherLang == Lang.TELUGU) "te" else "en"
-            listOf(
-                "lyrics/$otherFolder/${songId}_${otherCode}.lrc",
-                "lyrics/${songId}_${otherCode}.lrc"
-            )
-        }
+        // Try DB first (preprocessed), then assets fallback
+        val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
+        val repo = app.repository
+        val langStr = if (lang == Lang.TELUGU) "telugu" else "english"
 
         var parsed: List<LrcLine>? = null
-        for (p in candidates) {
-            android.util.Log.d("SongPlayer", "Trying lyrics path: $p")
-            parsed = tryOpen(p)
-            if (parsed != null) break
+        // Synchronously block tiny fetch using runBlocking-like pattern? Avoid blocking UI:
+        // Use try/catch and lifecycleScope with a latch-like behavior; but to keep existing method synchronous, we will use a quick runCatching with flows disabled.
+        try {
+            // This method is not suspend; we can temporarily use a small trick:
+            // Fetch on the IO service thread if available (player already running). Alternatively, rely on assets fallback below if DB not yet populated.
+            val linesFromDb = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                repo.getLyricsLines(songId, langStr)
+            }
+            parsed = linesFromDb
+        } catch (_: Exception) {
+            // ignore and fallback
+        }
+
+        if (parsed == null) {
+            fun tryOpen(path: String): List<LrcLine>? {
+                return runCatching {
+                    requireContext().assets.open(path).use { input ->
+                        java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
+                            val raw = br.readLines()
+                            LrcParser.parse(raw)
+                        }
+                    }
+                }.getOrNull()
+            }
+
+            // Try multiple paths: new format with folder, old format, then cross-language fallback
+            val candidates = listOf(
+                "lyrics/$langFolder/${songId}_${code}.lrc",
+                "lyrics/${songId}_${code}.lrc"
+            ) + run {
+                val otherLang = if (lang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
+                val otherFolder = if (otherLang == Lang.TELUGU) "telugu" else "english"
+                val otherCode = if (otherLang == Lang.TELUGU) "te" else "en"
+                listOf(
+                    "lyrics/$otherFolder/${songId}_${otherCode}.lrc",
+                    "lyrics/${songId}_${otherCode}.lrc"
+                )
+            }
+
+            for (p in candidates) {
+                android.util.Log.d("SongPlayer", "Trying lyrics path: $p")
+                parsed = tryOpen(p)
+                if (parsed != null) break
+            }
         }
 
         // Drop leading blank lines to remove the top gap

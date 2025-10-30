@@ -25,44 +25,17 @@ class DivineApplication : Application() {
         currentLanguage = sharedPrefs.getString("default_language", "telugu") ?: "telugu"
 
         applicationScope.launch {
+            // Initialize settings/sample content if needed
             repository.initializeDefaultSettings()
-
-            // Seed data if empty
             val gods = repository.getAllGods().first()
             if (gods.isEmpty()) {
                 repository.insertSampleData()
             }
 
-            // Optional: insert Shiva + Lingashtakam if missing
-            val newGodId = "god_shiva"
-            val newSongId = "Lingashtakam"
-            if (repository.getGodById(newGodId) == null) {
-                repository.insertGod(
-                    com.example.divneblessing_v0.data.God(
-                        id = newGodId,
-                        name = "Lord Shiva",
-                        imageFileName = "shiva.png",
-                        displayOrder = 2
-                    )
-                )
-            }
-            if (repository.getSongById(newSongId) == null) {
-                repository.insertSong(
-                    com.example.divneblessing_v0.data.Song(
-                        id = newSongId,
-                        title = "Lingashtakam",
-                        godId = newGodId,
-                        languageDefault = "telugu",
-                        audioFileName = "Lingashtakam.mp3",
-                        lyricsTeluguFileName = "Lingashtakam_te.lrc",
-                        lyricsEnglishFileName = "Lingashtakam_en.lrc",
-                        duration = 0,
-                        displayOrder = 1
-                    )
-                )
-            }
+            // Reset all mini counters on fresh app start
+            repository.resetAllSongCounters()
 
-            // Asset catalog reconciliation and mirroring into filesDir
+            // Reconcile assets and preprocess lyrics
             repository.reconcileAssets(this@DivineApplication)
         }
     }

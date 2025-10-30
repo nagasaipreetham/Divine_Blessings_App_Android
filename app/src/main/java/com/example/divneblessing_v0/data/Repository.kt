@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
@@ -47,13 +49,15 @@ class DivineRepository(private val database: DivineDatabase) {
     suspend fun getSongCounter(songId: String): Int {
         return database.songCounterDao().getCounter(songId)?.count ?: 0
     }
-    
     suspend fun updateSongCounter(songId: String, count: Int) {
         database.songCounterDao().insertOrUpdateCounter(SongCounter(songId = songId, count = count))
     }
-    
     suspend fun resetSongCounter(songId: String) {
         database.songCounterDao().resetCounter(songId)
+    }
+    // Reset all counters (called on cold app start)
+    suspend fun resetAllSongCounters() {
+        database.songCounterDao().resetAllCounters()
     }
 
     // User settings operations
@@ -246,19 +250,22 @@ class DivineRepository(private val database: DivineDatabase) {
                             ContentAsset(
                                 path = relPath,
                                 type = type,
-                                version = if (existingFilesEntry == null) 1 else nextVersion,
+                                version = nextVersion,
                                 checksum = fileChecksum,
                                 sizeBytes = destFile.length(),
-                                lastUpdated = System.currentTimeMillis(),
+                                lastUpdated = now,
                                 source = "files"
                             )
                         )
-                    } catch (_: Exception) {
-                        // Skip problematic asset; avoid crashing app on startup
+                    } catch (e: Exception) {
+                        android.util.Log.e("Repository", "Failed to mirror asset $relPath → ${destFile.absolutePath}", e)
                     }
                 }
             }
         }
+
+        // Preprocess lyrics into DB after reconciling files
+        preprocessAllLyrics(context)
     }
 
     // Recursively list files under an assets directory path (returns full relative paths)
@@ -285,6 +292,76 @@ class DivineRepository(private val database: DivineDatabase) {
 
         recurse(dir)
         return result
+    }
+
+    // Get preprocessed lyrics for (songId, language) from DB, or null if missing
+    suspend fun getLyricsLines(songId: String, language: String): List<com.example.divneblessing_v0.ui.player.LrcLine>? {
+        val entry = database.lyricsDao().getEntry(songId, language)
+        return entry?.let { jsonToLines(it.jsonLines) }
+    }
+
+    // Preprocess all assets lyrics into DB at startup (speeds up loading)
+    suspend fun preprocessAllLyrics(context: Context) {
+        val am = context.assets
+        val folders = listOf("telugu" to "te", "english" to "en")
+        for ((lang, code) in folders) {
+            val dir = "lyrics/$lang"
+            val files = try { am.list(dir) ?: emptyArray() } catch (_: Exception) { emptyArray() }
+            for (name in files) {
+                if (!name.endsWith(".lrc", ignoreCase = true)) continue
+                // Expect "{songId}_{code}.lrc"
+                val base = name.removeSuffix(".lrc")
+                val expectedSuffix = "_$code"
+                if (!base.endsWith(expectedSuffix)) continue
+                val songId = base.removeSuffix(expectedSuffix)
+                val relPath = "$dir/$name"
+
+                val lines = runCatching {
+                    am.open(relPath).use { input ->
+                        java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
+                            val raw = br.readLines()
+                            com.example.divneblessing_v0.ui.player.LrcParser.parse(raw)
+                        }
+                    }
+                }.getOrNull() ?: continue
+
+                val json = linesToJson(lines)
+                database.lyricsDao().upsert(
+                    LyricsEntry(
+                        songId = songId,
+                        language = if (lang == "english") "english" else "telugu",
+                        jsonLines = json,
+                        updatedAt = System.currentTimeMillis(),
+                        source = "assets"
+                    )
+                )
+            }
+        }
+    }
+
+    // Convert lines → JSON array string
+    private fun linesToJson(lines: List<com.example.divneblessing_v0.ui.player.LrcLine>): String {
+        val arr = JSONArray()
+        for (line in lines) {
+            val obj = JSONObject()
+            obj.put("x", line.text)
+            obj.put("t", line.timeMs ?: -1) // use -1 for untimed
+            arr.put(obj)
+        }
+        return arr.toString()
+    }
+
+    // Convert JSON array string → lines
+    private fun jsonToLines(json: String): List<com.example.divneblessing_v0.ui.player.LrcLine> {
+        val arr = JSONArray(json)
+        val out = mutableListOf<com.example.divneblessing_v0.ui.player.LrcLine>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            val text = obj.optString("x", "")
+            val t = obj.optInt("t", -1)
+            out.add(com.example.divneblessing_v0.ui.player.LrcLine(timeMs = if (t >= 0) t else null, text = text))
+        }
+        return out
     }
 
     private fun safeList(am: android.content.res.AssetManager, dir: String): Array<String> {

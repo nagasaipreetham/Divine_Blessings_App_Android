@@ -67,6 +67,10 @@ interface SongCounterDao {
 
     @Query("DELETE FROM song_counters WHERE songId = :songId")
     suspend fun resetCounter(songId: String)
+
+    // Reset all counters in DB on cold app start
+    @Query("DELETE FROM song_counters")
+    suspend fun resetAllCounters()
 }
 
 @Dao
@@ -107,6 +111,16 @@ data class SongWithGod(
     val godName: String
 )
 
+// Add LyricsDao
+@Dao
+interface LyricsDao {
+    @Query("SELECT * FROM lyrics WHERE songId = :songId AND language = :language")
+    suspend fun getEntry(songId: String, language: String): LyricsEntry?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: LyricsEntry)
+}
+
 // Main Database
 @Database(
     entities = [
@@ -115,9 +129,10 @@ data class SongWithGod(
         Favorite::class,
         SongCounter::class,
         UserSettings::class,
-        ContentAsset::class
+        ContentAsset::class,
+        LyricsEntry::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -127,6 +142,7 @@ abstract class DivineDatabase : RoomDatabase() {
     abstract fun songCounterDao(): SongCounterDao
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun assetDao(): AssetDao
+    abstract fun lyricsDao(): LyricsDao
 
     companion object {
         @Volatile
@@ -144,7 +160,25 @@ abstract class DivineDatabase : RoomDatabase() {
                         sizeBytes INTEGER NOT NULL,
                         lastUpdated INTEGER NOT NULL,
                         source TEXT NOT NULL,
-                        PRIMARY KEY(path, source)
+                        PRIMARY KEY (path, source)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        // New migration to create lyrics table
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS lyrics (
+                        songId TEXT NOT NULL,
+                        language TEXT NOT NULL,
+                        jsonLines TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        PRIMARY KEY (songId, language)
                     )
                     """.trimIndent()
                 )
@@ -158,7 +192,7 @@ abstract class DivineDatabase : RoomDatabase() {
                     DivineDatabase::class.java,
                     "divine_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
                 instance
@@ -167,6 +201,7 @@ abstract class DivineDatabase : RoomDatabase() {
     }
 }
 
+// Assets table DAO (already present)
 @Dao
 interface AssetDao {
     @Query("SELECT * FROM assets")

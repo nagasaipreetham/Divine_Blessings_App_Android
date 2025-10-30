@@ -91,6 +91,15 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Reset counters only on cold start (not on rotation or process restores)
+        if (savedInstanceState == null) {
+            com.example.divneblessing_v0.ui.player.SessionCounters.resetAll()
+            lifecycleScope.launch {
+                val repo = (application as com.example.divneblessing_v0.DivineApplication).repository
+                repo.resetAllSongCounters()
+            }
+        }
+
         // Keep bottom navigation fixed; let IME overlay instead of shifting layout
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
 
