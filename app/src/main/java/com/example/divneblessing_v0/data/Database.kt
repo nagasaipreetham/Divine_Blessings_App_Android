@@ -15,7 +15,10 @@ interface GodDao {
     suspend fun getGodById(godId: String): God?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertGod(god: God)
+    suspend fun insert(god: God)
+
+    @Query("DELETE FROM gods")
+    suspend fun deleteAllGods()
 }
 
 @Dao
@@ -33,7 +36,10 @@ interface SongDao {
     fun getAllSongsWithGods(): Flow<List<SongWithGod>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSong(song: Song)
+    suspend fun insert(song: Song)
+
+    @Query("DELETE FROM songs")
+    suspend fun deleteAllSongs()
 }
 
 @Dao
@@ -122,6 +128,7 @@ interface LyricsDao {
 }
 
 // Main Database
+// Class: DivineDatabase
 @Database(
     entities = [
         God::class,
@@ -132,7 +139,7 @@ interface LyricsDao {
         ContentAsset::class,
         LyricsEntry::class
     ],
-    version = 3,
+    version = 1, // Incremented version to 1
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -185,6 +192,57 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
+        // Migration from 4 to 5 - handles the corrupted database state
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Create a backup of existing data
+                db.execSQL("CREATE TABLE songs_backup AS SELECT * FROM songs WHERE 1=0")
+                db.execSQL("INSERT INTO songs_backup SELECT * FROM songs")
+                
+                // Create new songs table with proper schema
+                db.execSQL("DROP TABLE IF EXISTS songs_new")
+                db.execSQL("""
+                    CREATE TABLE songs_new (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        title TEXT NOT NULL,
+                        godId TEXT NOT NULL,
+                        languageDefault TEXT NOT NULL DEFAULT 'telugu',
+                        audioFileName TEXT NOT NULL,
+                        lyricsTeluguFileName TEXT,
+                        lyricsEnglishFileName TEXT,
+                        duration INTEGER NOT NULL,
+                        displayOrder INTEGER NOT NULL
+                    )
+                """)
+                
+                // Copy data from backup to new table
+                db.execSQL("""
+                    INSERT INTO songs_new (id, title, godId, languageDefault, audioFileName, 
+                                         lyricsTeluguFileName, lyricsEnglishFileName, duration, displayOrder)
+                    SELECT id, title, godId, 'telugu', audioFileName, 
+                           lyricsFileName, NULL, duration, displayOrder
+                    FROM songs_backup
+                """)
+                
+                // Drop old tables and rename new one
+                db.execSQL("DROP TABLE songs")
+                db.execSQL("ALTER TABLE songs_new RENAME TO songs")
+                db.execSQL("DROP TABLE songs_backup")
+            }
+        }
+
+        // Migration from 3 to 4 - ignore duplicate columns gracefully
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try { db.execSQL("ALTER TABLE songs ADD COLUMN languageDefault TEXT NOT NULL DEFAULT 'telugu'") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE songs ADD COLUMN lyricsTeluguFileName TEXT") } catch (_: Exception) {}
+                try { db.execSQL("ALTER TABLE songs ADD COLUMN lyricsEnglishFileName TEXT") } catch (_: Exception) {}
+            }
+        }
+
+        // NOTE: Remove both duplicate declarations of MIGRATION_4_5 from this file.
+        // We will rely on fallback-to-destructive migration instead of custom MIGRATION_4_5.
+
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = androidx.room.Room.databaseBuilder(
@@ -192,7 +250,10 @@ abstract class DivineDatabase : RoomDatabase() {
                     DivineDatabase::class.java,
                     "divine_database"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                // Remove: .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                // Rely on destructive fallback to recreate DB when the version changes.
+                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
                 instance

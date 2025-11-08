@@ -1,0 +1,62 @@
+{
+  "version": "20251108194018",
+  "gods": [
+    {
+      "id": "god_vishnu",
+      "name": "Lord Vishnu",
+      "imageFileName": "vishnu.png",
+      "displayOrder": 1,
+      "songs": [
+        {
+          "id": "song_vishnu_20251108150415",
+          "title": "Vishnu Sahasranama Stotram",
+          "godId": "god_vishnu",
+          "languageDefault": "telugu",
+          "audioFileName": "song_1.mp3",
+          "lyricsTeluguFileName": "song_1_te.lrc",
+          "lyricsEnglishFileName": "song_1_en.lrc",
+          "duration": 0,
+          "displayOrder": 1
+        }
+      ]
+    },
+    {
+      "id": "god_shiva",
+      "name": "Lord Shiva",
+      "imageFileName": "shiva.png",
+      "displayOrder": 2,
+      "songs": [
+        {
+          "id": "song_shiva_20251108150626",
+          "title": "Lingashtakam",
+          "godId": "god_shiva",
+          "languageDefault": "telugu",
+          "audioFileName": "Lingashtakam.mp3",
+          "lyricsTeluguFileName": "Lingashtakam_te.lrc",
+          "lyricsEnglishFileName": "Lingashtakam_en.lrc",
+          "duration": 0,
+          "displayOrder": 1
+        }
+      ]
+    },
+    {
+      "id": "god_hanuman",
+      "name": "Lord Hanuman",
+      "imageFileName": "Hanuman.jpeg",
+      "displayOrder": 3,
+      "songs": [
+        {
+          "id": "song_hanuman_20251108194018",
+          "title": "Hanuman Chalisa",
+          "godId": "god_hanuman",
+          "languageDefault": "telugu",
+          "audioFileName": "Hanuman_Chalisa.mp3",
+          "lyricsTeluguFileName": "Hanuman_Chalisa_te.lrc",
+          "lyricsEnglishFileName": "Hanuman_Chalisa_en.lrc",
+          "duration": 0,
+          "displayOrder": 1
+        }
+      ]
+    }
+  ]
+}

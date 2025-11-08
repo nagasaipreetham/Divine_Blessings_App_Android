@@ -150,48 +150,92 @@ class DivineRepository(private val database: DivineDatabase) {
         }
     }
 
-    // Initialize default settings
-    suspend fun initializeDefaultSettings() {
-        val existingSettings = database.userSettingsDao().getUserSettings().first()
-        if (existingSettings == null) {
-            database.userSettingsDao().insertOrUpdateSettings(UserSettings())
+    // Method: populateDatabaseFromJsonIfNeeded
+    suspend fun populateDatabaseFromJsonIfNeeded(context: Context) {
+        val jsonString = try {
+            context.assets.open("gods_songs.json").bufferedReader().use { it.readText() }
+        } catch (_: Exception) { return }
+    
+        val obj = try { JSONObject(jsonString) } catch (_: Exception) { return }
+    
+        val jsonVersionStr = obj.optString("version", "0")
+        val jsonVersion = jsonVersionStr.toLongOrNull() ?: 0L
+    
+        val prefs = context.getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
+        val storedVersionStr = prefs.getString("version", null)
+        val storedVersion = storedVersionStr?.toLongOrNull() ?: 0L
+    
+        // Also populate when DB is empty (fresh install or cleared storage)
+        val isDbEmpty = try { database.godDao().getAllGods().first().isEmpty() } catch (_: Exception) { true }
+    
+        if (jsonVersion > storedVersion || isDbEmpty) {
+            database.godDao().deleteAllGods()
+            database.songDao().deleteAllSongs()
+    
+            val godsArray = obj.optJSONArray("gods") ?: org.json.JSONArray()
+            for (i in 0 until godsArray.length()) {
+                val g = godsArray.optJSONObject(i) ?: continue
+    
+                val god = God(
+                    id = g.optString("id"),
+                    name = g.optString("name"),
+                    imageFileName = g.optString("imageFileName"),
+                    displayOrder = g.optInt("displayOrder", 0)
+                )
+                database.godDao().insert(god)
+    
+                val songsArray = g.optJSONArray("songs") ?: org.json.JSONArray()
+                for (j in 0 until songsArray.length()) {
+                    val s = songsArray.optJSONObject(j) ?: continue
+    
+                    val song = Song(
+                        id = s.optString("id"),
+                        title = s.optString("title"),
+                        godId = s.optString("godId", god.id),
+                        languageDefault = s.optString("languageDefault", "telugu"),
+                        audioFileName = s.optString("audioFileName", ""), // non-null field
+                        lyricsTeluguFileName = s.optString("lyricsTeluguFileName", null),
+                        lyricsEnglishFileName = s.optString("lyricsEnglishFileName", null),
+                        duration = s.optInt("duration", 0),
+                        displayOrder = s.optInt("displayOrder", 0)
+                    )
+                    database.songDao().insert(song)
+                }
+            }
+    
+            prefs.edit().putString("version", jsonVersionStr).apply()
         }
     }
 
-    // Sample data insertion (for development)
-    suspend fun insertSampleData() {
-        android.util.Log.d("Repository", "Inserting sample data...")
-        
-        // Insert sample gods - only Vishnu for now
-        val gods = listOf(
-            God("god_vishnu", "Lord Vishnu", "vishnu.png", 1)
-        )
-        
-        gods.forEach { god ->
-            android.util.Log.d("Repository", "Inserting god: ${god.name}")
-            database.godDao().insertGod(god)
+    suspend fun initializeDefaultSettings() {
+        val settings = database.userSettingsDao().getUserSettings().first()
+        if (settings == null) {
+            // No settings exist, insert all defaults
+            database.userSettingsDao().insertOrUpdateSettings(UserSettings())
+        } else {
+            // Settings exist, check individual fields and update missing ones
+            if (settings.themeMode.isNullOrEmpty()) {
+                database.userSettingsDao().updateThemeMode("system")
+            }
+            if (settings.accentColor.isNullOrEmpty()) {
+                database.userSettingsDao().updateAccentColor("blue")
+            }
+            if (settings.defaultLanguage.isNullOrEmpty()) {
+                database.userSettingsDao().updateDefaultLanguage("telugu")
+            }
+            if (settings.userName.isNullOrEmpty()) {
+                database.userSettingsDao().updateUserName("Bhakta")
+            }
         }
-
-        // Insert sample songs - using song_1 data for now
-        val songs = listOf(
-            Song("song_1", "Vishnu Sahasranama Stotram", "god_vishnu", "telugu", "song_1.mp3", "song_1_te.lrc", "song_1_en.lrc", 1800000, 1)
-        )
-        
-        songs.forEach { song ->
-            android.util.Log.d("Repository", "Inserting song: ${song.title}")
-            database.songDao().insertSong(song)
-        }
-        
-        android.util.Log.d("Repository", "Sample data insertion completed")
     }
 
     // Public insert helpers (safe passthroughs)
     suspend fun insertGod(god: God) {
-        database.godDao().insertGod(god)
+        database.godDao().insert(god)
     }
 
     suspend fun insertSong(song: Song) {
-        database.songDao().insertSong(song)
+        database.songDao().insert(song)
     }
 
     /**

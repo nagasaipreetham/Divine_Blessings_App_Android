@@ -25,18 +25,16 @@ class DivineApplication : Application() {
         currentLanguage = sharedPrefs.getString("default_language", "telugu") ?: "telugu"
 
         applicationScope.launch {
-            // Initialize settings/sample content if needed
+            // Populate database from JSON if needed
+            repository.populateDatabaseFromJsonIfNeeded(this@DivineApplication)
+
+            // Initialize default settings
             repository.initializeDefaultSettings()
-            val gods = repository.getAllGods().first()
-            if (gods.isEmpty()) {
-                repository.insertSampleData()
-            }
 
-            // Reset all mini counters on fresh app start
+            // Other background tasks can go here
             repository.resetAllSongCounters()
-
-            // Reconcile assets and preprocess lyrics
             repository.reconcileAssets(this@DivineApplication)
+            repository.preprocessAllLyrics(this@DivineApplication)
         }
     }
 

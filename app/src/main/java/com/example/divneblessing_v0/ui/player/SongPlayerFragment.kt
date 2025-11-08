@@ -69,7 +69,8 @@ class SongPlayerFragment : Fragment() {
     private var currentLang: Lang = Lang.TELUGU
     private var lines: List<LrcLine> = emptyList()
 
-    // Service related variables
+    private var songDetails: com.example.divneblessing_v0.data.Song? = null
+
     private var mediaPlayerService: MediaPlayerService? = null
     private var serviceBound = false
     private var hasAudio = false
@@ -94,9 +95,28 @@ class SongPlayerFragment : Fragment() {
             val binder = service as MediaPlayerService.LocalBinder
             mediaPlayerService = binder.getService()
             serviceBound = true
-            
-            // Load the song in the service
-            setupAudio()
+
+            // If launched from mini player or args were missing, pull id/title from service
+            if (songId == "unknown_song" || songId.isBlank()) {
+                mediaPlayerService?.getCurrentSongId()?.let { sid ->
+                    songId = sid
+                    titleText = mediaPlayerService?.getCurrentSongTitle() ?: titleText
+                    (activity as? AppCompatActivity)?.supportActionBar?.title = titleText
+                }
+            }
+
+            // Fetch details, then load audio and lyrics
+            viewLifecycleOwner.lifecycleScope.launch {
+                val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
+                val repo = app.repository
+                songDetails = repo.getSongById(songId)
+
+                // After details are available, load audio and lyrics
+                setupAudio()
+                val langStr = app.getLyricsLanguageForSong(songId)
+                currentLang = if (langStr.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
+                loadLyrics(currentLang)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -204,9 +224,17 @@ class SongPlayerFragment : Fragment() {
 
         // Initialize lyrics language: per-song override if present, else Profile default language
         val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
-        val langStr = app.getLyricsLanguageForSong(songId) // "telugu" or "english"
-        currentLang = if (langStr.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
-        loadLyrics(currentLang)
+        val repo = app.repository
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            // Fetch DB row containing audio and lyric file names
+            songDetails = repo.getSongById(songId)
+
+            // Initialize lyrics language and load after details are available
+            val langStr = app.getLyricsLanguageForSong(songId)
+            currentLang = if (langStr.equals("english", ignoreCase = true)) Lang.ENGLISH else Lang.TELUGU
+            loadLyrics(currentLang)
+        }
 
         // Counter init (per song, session-only)
         loadCounter()
@@ -287,7 +315,6 @@ class SongPlayerFragment : Fragment() {
     }
 
     private fun setupAudio() {
-        // Try to load the song in the service
         hasAudio = false
         txtNoSong.isVisible = false
         btnPlay.isEnabled = true
@@ -295,17 +322,17 @@ class SongPlayerFragment : Fragment() {
 
         if (mediaPlayerService != null) {
             try {
-                mediaPlayerService?.loadSong(songId, titleText)
+                // Use explicit audio file name from DB; fallback to {songId}.mp3
+                val fileName = songDetails?.audioFileName ?: "${songId}.mp3"
+                mediaPlayerService?.loadSongByFile(fileName, titleText, songId)
                 hasAudio = true
-                
-                // Add a small delay to ensure the player is prepared
+
                 ui.postDelayed({
                     try {
                         val duration = mediaPlayerService?.getDuration() ?: 0
                         seek.max = duration
                         txtTotal.text = formatMs(duration)
                         txtElapsed.text = "00:00"
-                        
                         val isPlaying = mediaPlayerService?.isPlaying() ?: false
                         btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
                     } catch (e: Exception) {
@@ -335,74 +362,81 @@ class SongPlayerFragment : Fragment() {
         // Set button to show the target language (opposite of current)
         btnLang.text = if (lang == Lang.TELUGU) "A" else "అ"
 
-        val langFolder = if (lang == Lang.TELUGU) "telugu" else "english"
-        val code = if (lang == Lang.TELUGU) "te" else "en"
-
-        // Try DB first (preprocessed), then assets fallback
+        val langStr = if (lang == Lang.TELUGU) "telugu" else "english"
         val app = (requireActivity().application as com.example.divneblessing_v0.DivineApplication)
         val repo = app.repository
-        val langStr = if (lang == Lang.TELUGU) "telugu" else "english"
 
-        var parsed: List<LrcLine>? = null
-        // Synchronously block tiny fetch using runBlocking-like pattern? Avoid blocking UI:
-        // Use try/catch and lifecycleScope with a latch-like behavior; but to keep existing method synchronous, we will use a quick runCatching with flows disabled.
-        try {
-            // This method is not suspend; we can temporarily use a small trick:
-            // Fetch on the IO service thread if available (player already running). Alternatively, rely on assets fallback below if DB not yet populated.
-            val linesFromDb = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                repo.getLyricsLines(songId, langStr)
-            }
-            parsed = linesFromDb
-        } catch (_: Exception) {
-            // ignore and fallback
-        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            var parsedLines: List<LrcLine>? = null
 
-        if (parsed == null) {
-            fun tryOpen(path: String): List<LrcLine>? {
-                return runCatching {
-                    requireContext().assets.open(path).use { input ->
-                        java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
-                            val raw = br.readLines()
-                            LrcParser.parse(raw)
+            // 1) Try DB first using multiple keys: songId, explicit lyrics basename, audio basename
+            try {
+                val candidates = mutableListOf<String>()
+                candidates.add(songId)
+
+                val explicitFile = if (lang == Lang.TELUGU) songDetails?.lyricsTeluguFileName else songDetails?.lyricsEnglishFileName
+                val explicitBase = explicitFile
+                    ?.substringBeforeLast(".")
+                    ?.substringBeforeLast("_te")
+                    ?.substringBeforeLast("_en")
+                if (!explicitBase.isNullOrBlank()) candidates.add(explicitBase)
+
+                val audioBase = songDetails?.audioFileName?.substringBeforeLast(".")
+                if (!audioBase.isNullOrBlank()) candidates.add(audioBase)
+
+                for (id in candidates) {
+                    parsedLines = repo.getLyricsLines(id, langStr)
+                    if (!parsedLines.isNullOrEmpty()) break
+                }
+            } catch (_: Exception) {}
+
+            // 2) Fallback to assets using explicit file name first, then conventional patterns
+            if (parsedLines.isNullOrEmpty()) {
+                fun tryOpen(path: String): List<LrcLine>? {
+                    return runCatching {
+                        requireContext().assets.open(path).use { input ->
+                            java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
+                                val raw = br.readLines()
+                                LrcParser.parse(raw)
+                            }
                         }
-                    }
-                }.getOrNull()
+                    }.getOrNull()
+                }
+
+                val langFolder = if (lang == Lang.TELUGU) "telugu" else "english"
+                val explicitFile = if (lang == Lang.TELUGU) songDetails?.lyricsTeluguFileName else songDetails?.lyricsEnglishFileName
+                val code = if (lang == Lang.TELUGU) "te" else "en"
+
+                val paths = mutableListOf<String>()
+                if (!explicitFile.isNullOrBlank()) paths.add("lyrics/$langFolder/$explicitFile")
+                paths.add("lyrics/$langFolder/${songId}_${code}.lrc")
+                paths.add("lyrics/${songId}_${code}.lrc")
+                val otherFolder = if (lang == Lang.TELUGU) "english" else "telugu"
+                val otherCode = if (lang == Lang.TELUGU) "en" else "te"
+                paths.add("lyrics/$otherFolder/${songId}_${otherCode}.lrc")
+                paths.add("lyrics/${songId}_${otherCode}.lrc")
+
+                for (p in paths) {
+                    android.util.Log.d("SongPlayer", "Trying lyrics path: $p")
+                    parsedLines = tryOpen(p)
+                    if (parsedLines != null) break
+                }
             }
 
-            // Try multiple paths: new format with folder, old format, then cross-language fallback
-            val candidates = listOf(
-                "lyrics/$langFolder/${songId}_${code}.lrc",
-                "lyrics/${songId}_${code}.lrc"
-            ) + run {
-                val otherLang = if (lang == Lang.TELUGU) Lang.ENGLISH else Lang.TELUGU
-                val otherFolder = if (otherLang == Lang.TELUGU) "telugu" else "english"
-                val otherCode = if (otherLang == Lang.TELUGU) "te" else "en"
-                listOf(
-                    "lyrics/$otherFolder/${songId}_${otherCode}.lrc",
-                    "lyrics/${songId}_${otherCode}.lrc"
-                )
+            // Update UI on the main thread
+            lines = (parsedLines ?: emptyList()).dropWhile { it.text.isBlank() }
+            android.util.Log.d("SongPlayer", "Parsed lyrics lines: ${lines.size}")
+            adapter.submit(lines)
+
+            // Re-enable and immediately sync highlight + center
+            autoCenterEnabled = true
+            val curPos = mediaPlayerService?.getCurrentPosition() ?: 0
+            highlightForTime(curPos)
+
+            txtNoLyrics.isVisible = lines.isEmpty()
+            if (lines.isNotEmpty()) {
+                lyricsList.post { lyricsList.scrollToPosition(0) }
             }
-
-            for (p in candidates) {
-                android.util.Log.d("SongPlayer", "Trying lyrics path: $p")
-                parsed = tryOpen(p)
-                if (parsed != null) break
-            }
-        }
-
-        // Drop leading blank lines to remove the top gap
-        lines = (parsed ?: emptyList()).dropWhile { it.text.isBlank() }
-        android.util.Log.d("SongPlayer", "Parsed lyrics lines: ${lines.size}")
-        adapter.submit(lines)
-
-        // Re-enable and immediately sync highlight + center
-        autoCenterEnabled = true
-        val curPos = mediaPlayerService?.getCurrentPosition() ?: 0
-        highlightForTime(curPos)
-
-        txtNoLyrics.isVisible = lines.isEmpty()
-        if (lines.isNotEmpty()) {
-            lyricsList.post { lyricsList.scrollToPosition(0) }
         }
     }
 

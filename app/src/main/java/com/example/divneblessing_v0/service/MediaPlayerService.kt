@@ -19,6 +19,7 @@ class MediaPlayerService : Service() {
     private var isPlaying = false
     private val TAG = "MediaPlayerService"
 
+    private var currentAudioFileName: String? = null
     companion object {
         const val ACTION_START_FOREGROUND = "ACTION_START_FOREGROUND"
     }
@@ -58,10 +59,8 @@ class MediaPlayerService : Service() {
         if (songId == currentSongId && mediaPlayer != null) {
             return
         }
-
         currentSongId = songId
         currentSongTitle = title
-        
         try {
             // Release previous player if exists
             mediaPlayer?.release()
@@ -72,9 +71,10 @@ class MediaPlayerService : Service() {
             
             // Use try-with-resources to ensure AssetFileDescriptor is closed properly
             val afd: AssetFileDescriptor? = try {
-                assets.openFd("audio/$songId.mp3")
+                // Interpret the argument as the exact file name (e.g., "Lingashtakam.mp3")
+                assets.openFd("audio/$songId")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to open audio file: audio/$songId.mp3", e)
+                Log.e(TAG, "Failed to open audio file: audio/$songId", e)
                 null
             }
             
@@ -119,6 +119,57 @@ class MediaPlayerService : Service() {
         }
     }
 
+    fun loadSongByFile(audioFileName: String, title: String, songId: String? = null) {
+        if (audioFileName == currentAudioFileName && mediaPlayer != null) {
+            return
+        }
+        currentAudioFileName = audioFileName
+        if (songId != null) currentSongId = songId
+        currentSongTitle = title
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = null
+            mediaPlayer = MediaPlayer()
+
+            val afd: AssetFileDescriptor? = try {
+                assets.openFd("audio/$audioFileName")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open audio file: audio/$audioFileName", e)
+                null
+            }
+
+            if (afd != null) {
+                try {
+                    mediaPlayer?.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                    afd.close()
+
+                    mediaPlayer?.setOnPreparedListener {
+                        updateNotification()
+                        mediaPlayer?.start()
+                        isPlaying = true
+                        updateNotification()
+                    }
+                    mediaPlayer?.setOnErrorListener { _, what, extra ->
+                        Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
+                        false
+                    }
+                    mediaPlayer?.setOnCompletionListener {
+                        isPlaying = false
+                        updateNotification()
+                    }
+                    mediaPlayer?.prepareAsync()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error setting up MediaPlayer", e)
+                    mediaPlayer?.release()
+                    mediaPlayer = null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in loadSongByFile", e)
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
     fun togglePlayPause(): Boolean {
         mediaPlayer?.let {
             try {
@@ -242,6 +293,6 @@ class MediaPlayerService : Service() {
     }
 
     fun getCurrentSongTitle(): String? = currentSongTitle
-    fun hasLoadedSong(): Boolean = (mediaPlayer != null && currentSongId != null)
+    fun hasLoadedSong(): Boolean = (mediaPlayer != null && (currentAudioFileName != null || currentSongId != null))
     fun getCurrentSongId(): String? = currentSongId
 }
