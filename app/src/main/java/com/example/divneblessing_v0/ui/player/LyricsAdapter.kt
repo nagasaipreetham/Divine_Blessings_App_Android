@@ -79,11 +79,13 @@ class LyricsAdapter(private var items: List<LrcLine>) : RecyclerView.Adapter<Lyr
 
     fun highlightFor(timeMs: Int): Int? {
         if (items.isEmpty()) return null
-        // Find last line with time <= current, skipping untimed lines
+        // Scan all lines; choose the last timed line <= current time
         var idx = -1
         for (i in items.indices) {
-            val t = items[i].timeMs ?: continue
-            if (t <= timeMs) idx = i else break
+            val t = items[i].timeMs
+            if (t != null && t <= timeMs) {
+                idx = i
+            }
         }
         if (idx != highlightedIndex) {
             val old = highlightedIndex
@@ -98,8 +100,10 @@ class LyricsAdapter(private var items: List<LrcLine>) : RecyclerView.Adapter<Lyr
         if (items.isEmpty()) return -1
         var idx = -1
         for (i in items.indices) {
-            val t = items[i].timeMs ?: continue
-            if (t <= ms) idx = i else break
+            val t = items[i].timeMs
+            if (t != null && t <= ms) {
+                idx = i
+            }
         }
         return idx
     }
