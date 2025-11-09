@@ -20,6 +20,7 @@ class MediaPlayerService : Service() {
     private val TAG = "MediaPlayerService"
 
     private var currentAudioFileName: String? = null
+    private var currentSpeed: Float = 1.0f
     companion object {
         const val ACTION_START_FOREGROUND = "ACTION_START_FOREGROUND"
     }
@@ -295,4 +296,23 @@ class MediaPlayerService : Service() {
     fun getCurrentSongTitle(): String? = currentSongTitle
     fun hasLoadedSong(): Boolean = (mediaPlayer != null && (currentAudioFileName != null || currentSongId != null))
     fun getCurrentSongId(): String? = currentSongId
+    
+    fun setPlaybackSpeed(speed: Float) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                currentSpeed = speed.coerceIn(0.25f, 2.0f)
+                val wasPlaying = mediaPlayer?.isPlaying ?: false
+                mediaPlayer?.playbackParams = mediaPlayer?.playbackParams?.setSpeed(currentSpeed)!!
+                // Preserve play/pause state - if it was paused, pause it again
+                if (!wasPlaying && mediaPlayer?.isPlaying == true) {
+                    mediaPlayer?.pause()
+                    isPlaying = false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting playback speed", e)
+        }
+    }
+    
+    fun getPlaybackSpeed(): Float = currentSpeed
 }

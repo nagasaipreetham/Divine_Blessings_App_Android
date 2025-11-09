@@ -13,22 +13,44 @@
         android:orientation="vertical"
         android:layout_weight="1">
 
-        <TextView
-            android:id="@+id/mini_player_title"
+        <!-- Title row with speed button -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@android:color/white"
-            android:textSize="16sp"
-            android:layout_marginBottom="4dp"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:id="@+id/mini_player_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@android:color/white"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/mini_player_speed"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_speed_button"
+                android:minWidth="48dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:text="1.0x"
+                android:textColor="@android:color/white"
+                android:textSize="11sp" />
+        </LinearLayout>
 
         <SeekBar
             android:id="@+id/mini_player_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />
 
-        <!-- NEW: elapsed and total time row -->
+        <!-- elapsed and total time row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -60,24 +82,24 @@
 
     <!-- Right side: Like + Play buttons -->
     <LinearLayout
-        android:paddingLeft="15dp"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:layout_marginStart="8dp">
 
         <ImageButton
             android:id="@+id/mini_player_like"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:src="@drawable/ic_heart_24"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Like" />
 
         <ImageButton
             android:id="@+id/mini_player_play"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:src="@drawable/ic_play_24"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Play/Pause" />

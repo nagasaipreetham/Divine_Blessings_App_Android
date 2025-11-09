@@ -105,8 +105,6 @@
     </LinearLayout>
 
     <!-- Bottom player bar -->
-
-    <!-- 'No lyrics' message -->
     <LinearLayout
         android:id="@+id/bottom_player_bar"
         android:layout_width="match_parent"
@@ -117,36 +115,70 @@
         android:orientation="horizontal"
         android:padding="12dp">
 
-        <TextView
-            android:id="@+id/txtElapsed"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
-            android:text="00:00"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="14sp" />
-
-        <SeekBar
-            android:id="@+id/seekbar"
+        <!-- Left side: Seekbar with times below -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:max="100"
-            android:progress="0" />
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/txtTotal"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="00:00"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="14sp" />
+            <!-- Speed button -->
+            <Button
+                android:layout_gravity="end"
+                android:id="@+id/btnSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_speed_button"
+                android:minWidth="56dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="1.0x"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/seekbar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0" />
+
+            <!-- Time labels below seekbar -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="2dp">
+
+                <TextView
+                    android:id="@+id/txtElapsed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="00:00"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="14sp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/txtTotal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="00:00"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <Space
-            android:layout_width="12dp"
+            android:layout_width="8dp"
             android:layout_height="0dp" />
 
+
+        <!-- Play/Pause button -->
         <ImageButton
             android:id="@+id/btnPlayPause"
             android:layout_width="64dp"
@@ -155,6 +187,8 @@
             app:srcCompat="@drawable/ic_play_24"
             app:tint="?attr/colorOnPrimary" />
     </LinearLayout>
+
+    <!-- 'No lyrics' message -->
 
     <TextView
         android:id="@+id/txtNoLyrics"

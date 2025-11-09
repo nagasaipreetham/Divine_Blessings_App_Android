@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private var miniPlay: android.widget.ImageButton? = null
     private var miniElapsed: android.widget.TextView? = null
     private var miniTotal: android.widget.TextView? = null
+    private var miniSpeed: android.widget.Button? = null
 
     // Service binding for mini player
     private var mediaPlayerService: com.example.divneblessing_v0.service.MediaPlayerService? = null
@@ -91,9 +92,10 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Reset counters only on cold start (not on rotation or process restores)
+        // Reset counters and speeds only on cold start (not on rotation or process restores)
         if (savedInstanceState == null) {
             com.example.divneblessing_v0.ui.player.SessionCounters.resetAll()
+            com.example.divneblessing_v0.ui.player.SpeedManager.resetAll()
             lifecycleScope.launch {
                 val repo = (application as com.example.divneblessing_v0.DivineApplication).repository
                 repo.resetAllSongCounters()
@@ -126,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         miniPlay = findViewById(R.id.mini_player_play)
         miniElapsed = findViewById(R.id.mini_player_elapsed)
         miniTotal = findViewById(R.id.mini_player_total)
+        miniSpeed = findViewById(R.id.mini_player_speed)
 
         // Ensure mini player draws above BottomNavigationView
         miniContainer?.elevation = (binding.bottomNav.elevation.takeIf { it != 0f } ?: 8f) + 1f
@@ -174,6 +177,11 @@ class MainActivity : AppCompatActivity() {
                 try { mediaPlayerService?.seekTo(pos) } catch (_: Exception) {}
             }
         })
+
+        // Speed button click handler
+        miniSpeed?.setOnClickListener {
+            showMiniSpeedDialog()
+        }
 
         // NEW: Open full player when tapping the collapsed player
         miniContainer?.setOnClickListener {
@@ -291,8 +299,82 @@ class MainActivity : AppCompatActivity() {
                     miniElapsed?.text = formatMs(pos)
                 }
             }
+            
+            // Update speed button
+            sid?.let { songId ->
+                val speed = com.example.divneblessing_v0.ui.player.SpeedManager.getSpeed(songId)
+                miniSpeed?.text = com.example.divneblessing_v0.ui.player.SpeedManager.formatSpeed(speed)
+            }
         }
         updateMiniVisibility()
+    }
+
+    private fun showMiniSpeedDialog() {
+        val svc = mediaPlayerService ?: return
+        val songId = svc.getCurrentSongId() ?: return
+        
+        val dialogView = layoutInflater.inflate(R.layout.dialog_speed_control, null)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val txtSpeedValue = dialogView.findViewById<android.widget.TextView>(R.id.txtSpeedValue)
+        val seekBarSpeed = dialogView.findViewById<android.widget.SeekBar>(R.id.seekBarSpeed)
+        val btnSpeedMinus = dialogView.findViewById<android.widget.ImageButton>(R.id.btnSpeedMinus)
+        val btnSpeedPlus = dialogView.findViewById<android.widget.ImageButton>(R.id.btnSpeedPlus)
+        val btnResetSpeed = dialogView.findViewById<android.widget.Button>(R.id.btnResetSpeed)
+
+        // Get current speed for this song
+        val currentSpeed = com.example.divneblessing_v0.ui.player.SpeedManager.getSpeed(songId)
+        val currentIndex = com.example.divneblessing_v0.ui.player.SpeedManager.speedToIndex(currentSpeed)
+        
+        seekBarSpeed.max = com.example.divneblessing_v0.ui.player.SpeedManager.SPEED_OPTIONS.size - 1
+        seekBarSpeed.progress = currentIndex
+        txtSpeedValue.text = com.example.divneblessing_v0.ui.player.SpeedManager.formatSpeed(currentSpeed)
+
+        seekBarSpeed.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                val speed = com.example.divneblessing_v0.ui.player.SpeedManager.indexToSpeed(progress)
+                txtSpeedValue.text = com.example.divneblessing_v0.ui.player.SpeedManager.formatSpeed(speed)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                val speed = com.example.divneblessing_v0.ui.player.SpeedManager.indexToSpeed(seekBar?.progress ?: 3)
+                applyMiniSpeed(songId, speed)
+            }
+        })
+
+        btnSpeedMinus.setOnClickListener {
+            val newProgress = (seekBarSpeed.progress - 1).coerceAtLeast(0)
+            seekBarSpeed.progress = newProgress
+            val speed = com.example.divneblessing_v0.ui.player.SpeedManager.indexToSpeed(newProgress)
+            applyMiniSpeed(songId, speed)
+        }
+
+        btnSpeedPlus.setOnClickListener {
+            val newProgress = (seekBarSpeed.progress + 1).coerceAtMost(seekBarSpeed.max)
+            seekBarSpeed.progress = newProgress
+            val speed = com.example.divneblessing_v0.ui.player.SpeedManager.indexToSpeed(newProgress)
+            applyMiniSpeed(songId, speed)
+        }
+
+        btnResetSpeed.setOnClickListener {
+            seekBarSpeed.progress = com.example.divneblessing_v0.ui.player.SpeedManager.speedToIndex(1.0f)
+            applyMiniSpeed(songId, 1.0f)
+        }
+
+        // Set width before showing to avoid flash
+        val width = (resources.displayMetrics.widthPixels * 0.85).toInt()
+        dialog.show()
+        dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun applyMiniSpeed(songId: String, speed: Float) {
+        com.example.divneblessing_v0.ui.player.SpeedManager.setSpeed(songId, speed)
+        mediaPlayerService?.setPlaybackSpeed(speed)
+        miniSpeed?.text = com.example.divneblessing_v0.ui.player.SpeedManager.formatSpeed(speed)
     }
 
     private fun formatMs(ms: Int): String {

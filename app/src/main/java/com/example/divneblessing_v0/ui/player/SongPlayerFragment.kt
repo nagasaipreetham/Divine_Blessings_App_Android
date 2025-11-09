@@ -65,6 +65,7 @@ class SongPlayerFragment : Fragment() {
     private lateinit var btnMinus: ImageButton
     private lateinit var txtCounter: TextView
     private lateinit var btnResetCounter: ImageButton
+    private lateinit var btnSpeed: Button
 
     private var currentLang: Lang = Lang.TELUGU
     private var lines: List<LrcLine> = emptyList()
@@ -195,6 +196,10 @@ class SongPlayerFragment : Fragment() {
         btnMinus = view.findViewById(R.id.btnMinusSmall)
         txtCounter = view.findViewById(R.id.txtSmallCount)
         btnResetCounter = view.findViewById(R.id.btnResetSmall)
+        btnSpeed = view.findViewById(R.id.btnSpeed)
+
+        // Initialize speed button
+        updateSpeedButton()
 
         // NEW: Back button
         view.findViewById<View>(R.id.btnBack)?.setOnClickListener {
@@ -305,6 +310,11 @@ class SongPlayerFragment : Fragment() {
             forceCenterForTime(pos)
         }
 
+        // Speed control button
+        btnSpeed.setOnClickListener {
+            showSpeedDialog()
+        }
+
         // Toggle "no lyrics" message
         txtNoLyrics.isVisible = lines.isEmpty()
 
@@ -335,6 +345,11 @@ class SongPlayerFragment : Fragment() {
                         txtElapsed.text = "00:00"
                         val isPlaying = mediaPlayerService?.isPlaying() ?: false
                         btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
+                        
+                        // Apply saved speed for this song
+                        val savedSpeed = SpeedManager.getSpeed(songId)
+                        mediaPlayerService?.setPlaybackSpeed(savedSpeed)
+                        updateSpeedButton()
                     } catch (e: Exception) {
                         android.util.Log.e("SongPlayer", "Error setting up UI after delay: ${e.message}")
                     }
@@ -536,6 +551,76 @@ class SongPlayerFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             repository.updateSongCounter(songId, count)
         }
+    }
+
+    private fun showSpeedDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_speed_control, null)
+        val dialog = android.app.AlertDialog.Builder(requireContext())
+            .setView(dialogView)
+            .create()
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        val txtSpeedValue = dialogView.findViewById<TextView>(R.id.txtSpeedValue)
+        val seekBarSpeed = dialogView.findViewById<SeekBar>(R.id.seekBarSpeed)
+        val btnSpeedMinus = dialogView.findViewById<ImageButton>(R.id.btnSpeedMinus)
+        val btnSpeedPlus = dialogView.findViewById<ImageButton>(R.id.btnSpeedPlus)
+        val btnResetSpeed = dialogView.findViewById<Button>(R.id.btnResetSpeed)
+
+        // Get current speed for this song
+        val currentSpeed = SpeedManager.getSpeed(songId)
+        val currentIndex = SpeedManager.speedToIndex(currentSpeed)
+        
+        seekBarSpeed.max = SpeedManager.SPEED_OPTIONS.size - 1
+        seekBarSpeed.progress = currentIndex
+        txtSpeedValue.text = SpeedManager.formatSpeed(currentSpeed)
+
+        seekBarSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val speed = SpeedManager.indexToSpeed(progress)
+                txtSpeedValue.text = SpeedManager.formatSpeed(speed)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val speed = SpeedManager.indexToSpeed(seekBar?.progress ?: 3)
+                applySpeed(speed)
+            }
+        })
+
+        btnSpeedMinus.setOnClickListener {
+            val newProgress = (seekBarSpeed.progress - 1).coerceAtLeast(0)
+            seekBarSpeed.progress = newProgress
+            val speed = SpeedManager.indexToSpeed(newProgress)
+            applySpeed(speed)
+        }
+
+        btnSpeedPlus.setOnClickListener {
+            val newProgress = (seekBarSpeed.progress + 1).coerceAtMost(seekBarSpeed.max)
+            seekBarSpeed.progress = newProgress
+            val speed = SpeedManager.indexToSpeed(newProgress)
+            applySpeed(speed)
+        }
+
+        btnResetSpeed.setOnClickListener {
+            seekBarSpeed.progress = SpeedManager.speedToIndex(1.0f)
+            applySpeed(1.0f)
+        }
+
+        // Set width before showing to avoid flash
+        val width = (resources.displayMetrics.widthPixels * 0.85).toInt()
+        dialog.show()
+        dialog.window?.setLayout(width, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun applySpeed(speed: Float) {
+        SpeedManager.setSpeed(songId, speed)
+        mediaPlayerService?.setPlaybackSpeed(speed)
+        updateSpeedButton()
+    }
+
+    private fun updateSpeedButton() {
+        val speed = SpeedManager.getSpeed(songId)
+        btnSpeed.text = SpeedManager.formatSpeed(speed)
     }
 
     override fun onResume() {
