@@ -11,6 +11,21 @@ import com.example.divneblessing_v0.MainActivity
 import com.example.divneblessing_v0.R
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
+import android.net.Uri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.cancel
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
+import androidx.media3.ui.PlayerNotificationManager
 
 class MediaPlayerService : Service() {
     private var mediaPlayer: MediaPlayer? = null
@@ -19,6 +34,7 @@ class MediaPlayerService : Service() {
     private var currentSongTitle: String? = null
     private var isPlaying = false
     private val TAG = "MediaPlayerService"
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var currentAudioFileName: String? = null
     private var currentSpeed: Float = 1.0f
@@ -27,6 +43,12 @@ class MediaPlayerService : Service() {
     private var isFavorite: Boolean = false
     private var currentGodBitmap: android.graphics.Bitmap? = null
     private var currentGodImageFileName: String? = null
+
+    private var exoPlayer: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
+    private var playerNotificationManager: PlayerNotificationManager? = null
+    private val notificationId: Int = 1
+    private val channelId: String = "media_playback_channel"
 
     private val notificationHandler = Handler(Looper.getMainLooper())
     private var lastLyricLine: String = ""
@@ -54,6 +76,148 @@ class MediaPlayerService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        // ExoPlayer
+        exoPlayer = ExoPlayer.Builder(this).build().apply {
+            addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlayingNew: Boolean) {
+                    this@MediaPlayerService.isPlaying = isPlayingNew
+                    playerNotificationManager?.invalidate()
+                }
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_ENDED) {
+                        this@MediaPlayerService.isPlaying = false
+                        playerNotificationManager?.invalidate()
+                    }
+                }
+            })
+        }
+
+        // MediaSession
+        mediaSession = MediaSession.Builder(this, exoPlayer!!).build()
+
+        // Notification: description adapter
+        val mediaDescriptionAdapter =
+            object : PlayerNotificationManager.MediaDescriptionAdapter {
+                override fun getCurrentContentTitle(player: Player): CharSequence {
+                    return currentSongTitle ?: "Divine Blessing"
+                }
+                override fun createCurrentContentIntent(player: Player): PendingIntent? {
+                    val intent = Intent(this@MediaPlayerService, com.example.divneblessing_v0.MainActivity::class.java)
+                    intent.putExtra("title", currentSongTitle)
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    return PendingIntent.getActivity(
+                        this@MediaPlayerService, 0, intent,
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M)
+                            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                        else PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                }
+                override fun getCurrentContentText(player: Player): CharSequence? {
+                    val (_, currentLine, _) = getCurrentLyricLines()
+                    return if (currentLine.isNotEmpty()) currentLine else null
+                }
+                override fun getCurrentLargeIcon(
+                    player: Player,
+                    callback: PlayerNotificationManager.BitmapCallback
+                ): android.graphics.Bitmap? {
+                    loadGodImageIfNeeded()
+                    return currentGodBitmap
+                }
+            }
+
+        // Notification: custom "Like" action
+        val customActionReceiver =
+            object : PlayerNotificationManager.CustomActionReceiver {
+                override fun createCustomActions(
+                    context: android.content.Context,
+                    instanceId: Int
+                ): Map<String, NotificationCompat.Action> {
+                    val likeIcon =
+                        if (isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
+                    val likeIntent =
+                        Intent(context, MediaPlayerService::class.java).setAction(ACTION_LIKE)
+                    val likePendingIntent =
+                        PendingIntent.getService(
+                            context,
+                            101,
+                            likeIntent,
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M)
+                                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                            else PendingIntent.FLAG_UPDATE_CURRENT
+                        )
+                    val likeAction = NotificationCompat.Action(likeIcon, "Like", likePendingIntent)
+                    return mapOf(ACTION_LIKE to likeAction)
+                }
+
+                override fun getCustomActions(player: Player): List<String> {
+                    return listOf(ACTION_LIKE)
+                }
+
+                override fun onCustomAction(
+                    player: Player,
+                    action: String,
+                    intent: Intent
+                ) {
+                    if (action == ACTION_LIKE) {
+                        handleLikeAction()
+                    }
+                }
+            }
+
+        // Notification: listener controls startForeground/stopForeground
+        val notificationListener =
+            object : PlayerNotificationManager.NotificationListener {
+                override fun onNotificationPosted(
+                    notificationId: Int,
+                    notification: android.app.Notification,
+                    ongoing: Boolean
+                ) {
+                    if (ongoing) {
+                        startForeground(notificationId, notification)
+                    } else {
+                        try {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                                stopForeground(STOP_FOREGROUND_DETACH)
+                            } else {
+                                @Suppress("DEPRECATION") stopForeground(false)
+                            }
+                        } catch (_: Exception) {}
+                        androidx.core.app.NotificationManagerCompat
+                            .from(this@MediaPlayerService)
+                            .notify(notificationId, notification)
+                    }
+                }
+
+                override fun onNotificationCancelled(
+                    notificationId: Int,
+                    dismissedByUser: Boolean
+                ) {
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                        } else {
+                            @Suppress("DEPRECATION") stopForeground(true)
+                        }
+                    } catch (_: Exception) {}
+                    stopSelf()
+                }
+            }
+
+        // PlayerNotificationManager setup
+        playerNotificationManager =
+            PlayerNotificationManager.Builder(this, notificationId, channelId)
+                .setMediaDescriptionAdapter(mediaDescriptionAdapter)
+                .setNotificationListener(notificationListener)
+                .setCustomActionReceiver(customActionReceiver)
+                .build().apply {
+                    setUseNextAction(false)
+                    setUsePreviousAction(false)
+                    setUseFastForwardAction(true)
+                    setUseRewindAction(true)
+                    setSmallIcon(R.drawable.ic_play_24)
+                    setPlayer(exoPlayer)
+                }
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -65,7 +229,7 @@ class MediaPlayerService : Service() {
             ACTION_START_FOREGROUND -> {
                 // Only start foreground if we have a song
                 if (currentSongTitle != null || currentSongId != null) {
-                    updateNotification()
+                    playerNotificationManager?.invalidate()
                     notificationHandler.post(notificationUpdateRunnable)
                 }
             }
@@ -89,7 +253,7 @@ class MediaPlayerService : Service() {
             else -> {
                 // Only update notification if we have a song
                 if (currentSongTitle != null || currentSongId != null) {
-                    updateNotification()
+                    playerNotificationManager?.invalidate()
                     notificationHandler.post(notificationUpdateRunnable)
                 }
             }
@@ -99,459 +263,252 @@ class MediaPlayerService : Service() {
     }
 
     fun loadSong(songId: String, title: String) {
-        if (songId == currentSongId && mediaPlayer != null) {
+        if (songId == currentSongId) {
             return
         }
         currentSongId = songId
         currentSongTitle = title
+
         // Seed favorite state once per song
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        serviceScope.launch(Dispatchers.IO) {
             try {
                 val app = application as? com.example.divneblessing_v0.DivineApplication
                 isFavorite = app?.repository?.isFavorite(songId)?.first() ?: false
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    updateNotification(silent = true)
+                withContext(Dispatchers.Main) {
+                    playerNotificationManager?.invalidate()
                 }
             } catch (_: Exception) {}
         }
 
-        // Start foreground service immediately with initial notification
-        updateNotification(silent = false)
+        // ExoPlayer: play asset:///audio/<file>
+        val uri = android.net.Uri.parse("asset:///audio/$songId")
+        val mediaItem = androidx.media3.common.MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(songId)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist("Divine Blessing")
+                    .build()
+            )
+            .build()
+
+        exoPlayer?.apply {
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
+
+        playerNotificationManager?.invalidate()
         notificationHandler.removeCallbacks(notificationUpdateRunnable)
         notificationHandler.post(notificationUpdateRunnable)
-
-        try {
-            // Release previous player if exists
-            mediaPlayer?.release()
-            mediaPlayer = null
-
-            // Create new player
-            mediaPlayer = MediaPlayer()
-
-            // Use try-with-resources to ensure AssetFileDescriptor is closed properly
-            val afd: AssetFileDescriptor? =
-                    try {
-                        // Interpret the argument as the exact file name (e.g., "Lingashtakam.mp3")
-                        assets.openFd("audio/$songId")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to open audio file: audio/$songId", e)
-                        null
-                    }
-
-            if (afd != null) {
-                try {
-                    mediaPlayer?.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                    afd.close() // Close the descriptor after setting data source
-
-                    mediaPlayer?.setOnPreparedListener {
-                        Log.d(TAG, "MediaPlayer prepared successfully")
-                        // Auto-start playback when prepared
-                        mediaPlayer?.start()
-                        isPlaying = true
-                        updateNotification(silent = true)
-                    }
-
-                    mediaPlayer?.setOnErrorListener { _, what, extra ->
-                        Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                        false
-                    }
-
-                    mediaPlayer?.setOnCompletionListener {
-                        isPlaying = false
-                        updateNotification(silent = true)
-                    }
-
-                    // Use prepareAsync to avoid blocking the main thread
-                    mediaPlayer?.prepareAsync()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting up MediaPlayer", e)
-                    mediaPlayer?.release()
-                    mediaPlayer = null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in loadSong", e)
-            mediaPlayer?.release()
-            mediaPlayer = null
-        }
     }
-
     fun loadSongByFile(audioFileName: String, title: String, songId: String? = null) {
-        if (audioFileName == currentAudioFileName && mediaPlayer != null) {
-            return
-        }
         currentAudioFileName = audioFileName
         if (songId != null) currentSongId = songId
         currentSongTitle = title
 
-        // Start foreground service immediately with initial notification
-        updateNotification(silent = false)
+        val idForItem = songId ?: audioFileName
+        val uri = android.net.Uri.parse("asset:///audio/$audioFileName")
+        val mediaItem = androidx.media3.common.MediaItem.Builder()
+            .setUri(uri)
+            .setMediaId(idForItem)
+            .setMediaMetadata(
+                androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist("Divine Blessing")
+                    .build()
+            )
+            .build()
+
+        exoPlayer?.apply {
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+        }
+        playerNotificationManager?.invalidate()
         notificationHandler.removeCallbacks(notificationUpdateRunnable)
         notificationHandler.post(notificationUpdateRunnable)
-
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = null
-            mediaPlayer = MediaPlayer()
-
-            val afd: AssetFileDescriptor? =
-                    try {
-                        assets.openFd("audio/$audioFileName")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to open audio file: audio/$audioFileName", e)
-                        null
-                    }
-
-            if (afd != null) {
-                try {
-                    mediaPlayer?.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                    afd.close()
-
-                    mediaPlayer?.setOnPreparedListener {
-                        mediaPlayer?.start()
-                        isPlaying = true
-                        updateNotification(silent = true)
-                    }
-                    mediaPlayer?.setOnErrorListener { _, what, extra ->
-                        Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                        false
-                    }
-                    mediaPlayer?.setOnCompletionListener {
-                        isPlaying = false
-                        updateNotification(silent = true)
-                    }
-                    mediaPlayer?.prepareAsync()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error setting up MediaPlayer", e)
-                    mediaPlayer?.release()
-                    mediaPlayer = null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in loadSongByFile", e)
-            mediaPlayer?.release()
-            mediaPlayer = null
-        }
     }
 
-    fun togglePlayPause(): Boolean {
-        mediaPlayer?.let {
-            try {
-                if (it.isPlaying) {
-                    it.pause()
-                    isPlaying = false
+        fun togglePlayPause(): Boolean {
+            exoPlayer?.let { p ->
+                if (p.isPlaying) {
+                    p.pause()
+                    this.isPlaying = false
                 } else {
-                    it.start()
-                    isPlaying = true
+                    p.play()
+                    this.isPlaying = true
                 }
-                updateNotification(silent = false)
-                return isPlaying
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in togglePlayPause", e)
+                playerNotificationManager?.invalidate()
+                return this.isPlaying
             }
-        }
-        return false
-    }
-
-    fun seekTo(position: Int) {
-        try {
-            mediaPlayer?.seekTo(position)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in seekTo", e)
-        }
-    }
-
-    fun getCurrentPosition(): Int {
-        return try {
-            mediaPlayer?.currentPosition ?: 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in getCurrentPosition", e)
-            0
-        }
-    }
-
-    fun getDuration(): Int {
-        return try {
-            mediaPlayer?.duration ?: 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in getDuration", e)
-            0
-        }
-    }
-
-    fun isPlaying(): Boolean {
-        return try {
-            mediaPlayer?.isPlaying ?: false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in isPlaying", e)
-            false
-        }
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel =
-                    NotificationChannel(
-                                    "media_playback_channel",
-                                    "Media Playback",
-                                    NotificationManager.IMPORTANCE_LOW
-                            )
-                            .apply {
-                                description = "Shows currently playing song"
-                                setShowBadge(false)
-                                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                                setSound(null, null) // Disable sound
-                                enableVibration(false) // Disable vibration
-                            }
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-            Log.d(TAG, "Notification channel created")
-        }
-    }
-
-    private fun updateNotificationIfNeeded() {
-        // Only update if lyrics changed or play state changed
-        val (_, currentLine, _) = getCurrentLyricLines()
-        if (currentLine != lastLyricLine) {
-            lastLyricLine = currentLine
-            updateNotification(silent = true)
-        }
-    }
-
-    private fun updateNotification(silent: Boolean = false) {
-        // Only show notification if we have a song loaded
-        if (currentSongTitle == null && currentSongId == null) {
-            Log.d(TAG, "No song loaded, skipping notification update")
-            return
+            return false
         }
 
-        try {
-            val title = currentSongTitle ?: "Now Playing"
-
-            // Get current lyrics for display
-            val (_, currentLine, _) = getCurrentLyricLines()
-            val subtitle = if (currentLine.isNotEmpty()) currentLine else "Divine Blessing"
-
-            // Create pending intents with proper flags for Android 9+
-            val pendingIntentFlags =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                    } else {
-                        PendingIntent.FLAG_UPDATE_CURRENT
-                    }
-
-            val playPauseIntent =
-                    Intent(this, MediaPlayerService::class.java).apply {
-                        action = ACTION_PLAY_PAUSE
-                    }
-            val playPausePendingIntent =
-                    PendingIntent.getService(this, 1, playPauseIntent, pendingIntentFlags)
-
-            val likeIntent =
-                    Intent(this, MediaPlayerService::class.java).apply { action = ACTION_LIKE }
-            val likePendingIntent =
-                    PendingIntent.getService(this, 2, likeIntent, pendingIntentFlags)
-
-            // Open player page when notification is clicked
-            val contentIntent =
-                    Intent(this, MainActivity::class.java).apply {
-                        putExtra("openPlayer", true)
-                        putExtra("songId", currentSongId)
-                        putExtra("title", currentSongTitle)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    }
-            val contentPendingIntent =
-                    PendingIntent.getActivity(
-                            this,
-                            0,
-                            contentIntent,
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                                    PendingIntent.FLAG_IMMUTABLE or
-                                            PendingIntent.FLAG_UPDATE_CURRENT
-                            else PendingIntent.FLAG_UPDATE_CURRENT
-                    )
-
-            // Ensure god image is loaded
-            loadGodImageIfNeeded()
-
-            // Use standard MediaStyle notification instead of custom RemoteViews
-            val notification =
-                    NotificationCompat.Builder(this, "media_playback_channel")
-                            .setSmallIcon(R.drawable.ic_play_24)
-                            .setContentTitle(title)
-                            .setContentText(subtitle)
-                            .setSubText("Divine Blessing")
-                            .setContentIntent(contentPendingIntent)
-                            .setLargeIcon(currentGodBitmap)
-                            .addAction(
-                                    if (isFavorite) R.drawable.ic_heart_filled_24
-                                    else R.drawable.ic_heart_24,
-                                    "Like",
-                                    likePendingIntent
-                            )
-                            .addAction(
-                                    if (isPlaying) R.drawable.ic_pause_24
-                                    else R.drawable.ic_play_24,
-                                    if (isPlaying) "Pause" else "Play",
-                                    playPausePendingIntent
-                            )
-                            .setStyle(
-                                    androidx.media.app.NotificationCompat.MediaStyle()
-                                            .setShowActionsInCompactView(0, 1)
-                            )
-                            .setOngoing(true)
-                            .setShowWhen(false)
-                            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                            .setPriority(NotificationCompat.PRIORITY_LOW)
-                            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                            .setOnlyAlertOnce(true) // Only alert once, not on every update
-                            .setSilent(silent) // Make updates silent
-                            .build()
-
-            startForeground(1, notification)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating notification", e)
+        fun seekTo(position: Int) {
+            exoPlayer?.seekTo(position.toLong())
+            playerNotificationManager?.invalidate()
         }
-    }
 
-    private fun loadGodImageIfNeeded() {
-        val file = currentGodImageFileName ?: return
-        if (currentGodBitmap != null) return
-        try {
-            assets.open("images/$file").use { input ->
-                currentGodBitmap = android.graphics.BitmapFactory.decodeStream(input)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load god image: $file", e)
+        fun getCurrentPosition(): Int {
+            return (exoPlayer?.currentPosition ?: 0L).toInt()
+        }
+
+        fun getDuration(): Int {
+            return (exoPlayer?.duration ?: 0L).toInt()
+        }
+
+        fun isPlaying(): Boolean {
+            return exoPlayer?.isPlaying ?: false
+        }
+
+        fun getCurrentSongId(): String? {
+            return currentSongId
+        }
+
+        fun getCurrentSongTitle(): String? {
+            return currentSongTitle
+        }
+
+        fun hasLoadedSong(): Boolean {
+            return currentSongId != null
+        }
+
+        fun setPlaybackSpeed(speed: Float) {
+            currentSpeed = speed
+            exoPlayer?.setPlaybackParameters(PlaybackParameters(speed))
+        }
+
+        fun setGodId(godId: String) {
+            currentGodId = godId
+            // Clear cached bitmap so it reloads for the new god
             currentGodBitmap = null
+            currentGodImageFileName = null
         }
-    }
 
-    private fun formatMs(ms: Int): String {
-        val totalSec = (ms / 1000).coerceAtLeast(0)
-        val m = totalSec / 60
-        val s = totalSec % 60
-        return String.format("%02d:%02d", m, s)
-    }
+        private fun createNotificationChannel() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel =
+                        NotificationChannel(
+                                        "media_playback_channel",
+                                        "Media Playback",
+                                        NotificationManager.IMPORTANCE_LOW
+                                )
+                                .apply {
+                                    description = "Shows currently playing song"
+                                    setShowBadge(false)
+                                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                                    setSound(null, null) // Disable sound
+                                    enableVibration(false) // Disable vibration
+                                }
+                val notificationManager = getSystemService(NotificationManager::class.java)
+                notificationManager.createNotificationChannel(channel)
+                Log.d(TAG, "Notification channel created")
+            }
+        }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        // Stop playback when app is removed from recents (as requested)
-        try {
+        private fun updateNotificationIfNeeded() {
+            val (_, currentLine, _) = getCurrentLyricLines()
+            if (currentLine != lastLyricLine) {
+                lastLyricLine = currentLine
+                playerNotificationManager?.invalidate()
+            }
+        }
+
+        private fun updateNotification() {
+            playerNotificationManager?.invalidate()
+        }
+
+        fun setLyrics(lyrics: List<com.example.divneblessing_v0.ui.player.LrcLine>) {
+            currentLyrics = lyrics
+            lastLyricLine = ""
+            playerNotificationManager?.invalidate()
+        }
+
+        private fun getCurrentLyricLines(): Triple<String, String, String> {
+            if (currentLyrics.isEmpty()) return Triple("", "", "")
+
+            val currentPos = getCurrentPosition()
+            var currentIndex = -1
+
+            // Find current lyric line
+            for (i in currentLyrics.indices) {
+                val lineTime = currentLyrics[i].timeMs
+                if (lineTime != null && lineTime <= currentPos) {
+                    currentIndex = i
+                } else if (lineTime != null) {
+                    break
+                }
+            }
+
+            val prevLine = if (currentIndex > 0) currentLyrics[currentIndex - 1].text else ""
+            val currentLine = if (currentIndex >= 0) currentLyrics[currentIndex].text else ""
+            val nextLine =
+                    if (currentIndex >= 0 && currentIndex < currentLyrics.size - 1)
+                            currentLyrics[currentIndex + 1].text
+                    else ""
+
+            return Triple(prevLine, currentLine, nextLine)
+        }
+
+        private fun handleLikeAction() {
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    val app = application as? com.example.divneblessing_v0.DivineApplication
+                    val songId = currentSongId ?: return@launch
+                    
+                    app?.repository?.toggleFavorite(songId)
+                    isFavorite = app?.repository?.isFavorite(songId)?.first() ?: false
+                    
+                    withContext(Dispatchers.Main) {
+                        playerNotificationManager?.invalidate()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error toggling favorite", e)
+                }
+            }
+        }
+
+        private fun loadGodImageIfNeeded() {
+            if (currentGodBitmap != null) return
+            
+            serviceScope.launch(Dispatchers.IO) {
+                try {
+                    val app = application as? com.example.divneblessing_v0.DivineApplication
+                    val songId = currentSongId ?: return@launch
+                    val song = app?.repository?.getSongById(songId) ?: return@launch
+                    val god = app.repository.getGodById(song.godId) ?: return@launch
+                    
+                    val imageFileName = god.imageFileName
+                    if (imageFileName.isNotEmpty()) {
+                        val bitmap = try {
+                            val inputStream = assets.open("images/gods/$imageFileName")
+                            android.graphics.BitmapFactory.decodeStream(inputStream)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error loading god image", e)
+                            null
+                        }
+                        
+                        currentGodBitmap = bitmap
+                        currentGodImageFileName = imageFileName
+                        
+                        withContext(Dispatchers.Main) {
+                            playerNotificationManager?.invalidate()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in loadGodImageIfNeeded", e)
+                }
+            }
+        }
+
+        override fun onDestroy() {
+            super.onDestroy()
             notificationHandler.removeCallbacks(notificationUpdateRunnable)
-            mediaPlayer?.release()
-            mediaPlayer = null
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                @Suppress("DEPRECATION") stopForeground(true)
-            }
-            stopSelf()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in onTaskRemoved", e)
+            serviceScope.cancel()
+            exoPlayer?.release()
+            mediaSession?.release()
+            playerNotificationManager?.setPlayer(null)
         }
-    }
-
-    override fun onDestroy() {
-        try {
-            notificationHandler.removeCallbacks(notificationUpdateRunnable)
-            mediaPlayer?.release()
-            mediaPlayer = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in onDestroy", e)
-        }
-        super.onDestroy()
-    }
-
-    fun getCurrentSongTitle(): String? = currentSongTitle
-    fun hasLoadedSong(): Boolean =
-            (mediaPlayer != null && (currentAudioFileName != null || currentSongId != null))
-    fun getCurrentSongId(): String? = currentSongId
-
-    fun setPlaybackSpeed(speed: Float) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                currentSpeed = speed.coerceIn(0.25f, 2.0f)
-                val wasPlaying = mediaPlayer?.isPlaying ?: false
-                mediaPlayer?.playbackParams = mediaPlayer?.playbackParams?.setSpeed(currentSpeed)!!
-                // Preserve play/pause state - if it was paused, pause it again
-                if (!wasPlaying && mediaPlayer?.isPlaying == true) {
-                    mediaPlayer?.pause()
-                    isPlaying = false
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting playback speed", e)
-        }
-    }
-
-    fun getPlaybackSpeed(): Float = currentSpeed
-
-    fun setGodId(godId: String?) {
-        currentGodId = godId
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val app = application as? com.example.divneblessing_v0.DivineApplication
-                val god = godId?.let { app?.repository?.getGodById(it) }
-                currentGodImageFileName = god?.imageFileName
-                loadGodImageIfNeeded()
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    updateNotification(silent = true)
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    private fun handleLikeAction() {
-        val songId = currentSongId ?: return
-        Log.d(TAG, "handleLikeAction: songId=$songId, currentFavorite=$isFavorite")
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val app = application as? com.example.divneblessing_v0.DivineApplication
-                // Toggle favorite in database
-                app?.repository?.toggleFavorite(songId)
-                // Read back the new state
-                isFavorite = app?.repository?.isFavorite(songId)?.first() ?: false
-                Log.d(TAG, "handleLikeAction: newFavorite=$isFavorite")
-                // Update notification on main thread
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    updateNotification(silent = false)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error toggling favorite: ${e.message}", e)
-            }
-        }
-    }
-
-    fun setLyrics(lyrics: List<com.example.divneblessing_v0.ui.player.LrcLine>) {
-        currentLyrics = lyrics
-        lastLyricLine = "" // Reset to force update
-        updateNotification(silent = true)
-    }
-
-    private fun getCurrentLyricLines(): Triple<String, String, String> {
-        if (currentLyrics.isEmpty()) return Triple("", "", "")
-
-        val currentPos = getCurrentPosition()
-        var currentIndex = -1
-
-        // Find current lyric line
-        for (i in currentLyrics.indices) {
-            val lineTime = currentLyrics[i].timeMs
-            if (lineTime != null && lineTime <= currentPos) {
-                currentIndex = i
-            } else if (lineTime != null) {
-                break
-            }
-        }
-
-        val prevLine = if (currentIndex > 0) currentLyrics[currentIndex - 1].text else ""
-        val currentLine = if (currentIndex >= 0) currentLyrics[currentIndex].text else ""
-        val nextLine =
-                if (currentIndex >= 0 && currentIndex < currentLyrics.size - 1)
-                        currentLyrics[currentIndex + 1].text
-                else ""
-
-        return Triple(prevLine, currentLine, nextLine)
-    }
 }

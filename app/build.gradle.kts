@@ -72,6 +72,11 @@ dependencies {
 
     // Media and support libraries
     implementation("androidx.media:media:1.6.0")
+
+    // Media3 (ExoPlayer + Session + Notification UI)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.legacy:legacy-support-v4:1.0.0")
     
     // Testing
