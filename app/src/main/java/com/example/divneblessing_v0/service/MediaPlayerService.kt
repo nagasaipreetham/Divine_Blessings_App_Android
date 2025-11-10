@@ -56,10 +56,7 @@ class MediaPlayerService : Service() {
             object : Runnable {
                 override fun run() {
                     updateNotificationIfNeeded()
-                    notificationHandler.postDelayed(
-                            this,
-                            2000
-                    ) // Update every 2 seconds (reduced from 500ms)
+                    notificationHandler.postDelayed(this, 100) // Update every 100ms for instant lyrics sync
                 }
             }
 
@@ -133,20 +130,34 @@ class MediaPlayerService : Service() {
                     context: android.content.Context,
                     instanceId: Int
                 ): Map<String, NotificationCompat.Action> {
-                    val likeIcon =
-                        if (isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
-                    val likeIntent =
-                        Intent(context, MediaPlayerService::class.java).setAction(ACTION_LIKE)
-                    val likePendingIntent =
-                        PendingIntent.getService(
-                            context,
-                            101,
-                            likeIntent,
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M)
-                                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                            else PendingIntent.FLAG_UPDATE_CURRENT
-                        )
-                    val likeAction = NotificationCompat.Action(likeIcon, "Like", likePendingIntent)
+                    val likeIntent = Intent(context, MediaPlayerService::class.java).setAction(ACTION_LIKE)
+                    val likePendingIntent = PendingIntent.getService(
+                        context,
+                        101,
+                        likeIntent,
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M)
+                            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                        else PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                    
+                    // Create colored icon for notification action
+                    val likeIcon = if (isFavorite) {
+                        // Create a red heart icon using IconCompat with tint
+                        val redColor = androidx.core.content.ContextCompat.getColor(context, R.color.red)
+                        androidx.core.graphics.drawable.IconCompat.createWithResource(context, R.drawable.ic_heart_filled_24)
+                            .setTint(redColor)
+                    } else {
+                        // White outline heart for not favorited
+                        androidx.core.graphics.drawable.IconCompat.createWithResource(context, R.drawable.ic_heart_24)
+                    }
+                    
+                    // Create the action with colored icon
+                    val likeAction = NotificationCompat.Action.Builder(
+                        likeIcon,
+                        if (isFavorite) "Unlike" else "Like",
+                        likePendingIntent
+                    ).build()
+                    
                     return mapOf(ACTION_LIKE to likeAction)
                 }
 
@@ -215,7 +226,7 @@ class MediaPlayerService : Service() {
                     setUsePreviousAction(false)
                     setUseFastForwardAction(true)
                     setUseRewindAction(true)
-                    setSmallIcon(R.drawable.ic_play_24)
+                    setSmallIcon(R.mipmap.ic_launcher)
                     setPlayer(exoPlayer)
                 }
     }

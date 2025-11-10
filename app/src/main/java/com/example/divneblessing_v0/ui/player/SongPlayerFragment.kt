@@ -332,9 +332,17 @@ class SongPlayerFragment : Fragment() {
 
         if (mediaPlayerService != null) {
             try {
-                // Use explicit audio file name from DB; fallback to {songId}.mp3
-                val fileName = songDetails?.audioFileName ?: "${songId}.mp3"
-                mediaPlayerService?.loadSongByFile(fileName, titleText, songId)
+                // Check if the same song is already loaded in the service
+                val currentServiceSongId = mediaPlayerService?.getCurrentSongId()
+                val isSameSong = currentServiceSongId == songId
+                
+                // Only load the song if it's different from what's currently playing
+                if (!isSameSong) {
+                    // Use explicit audio file name from DB; fallback to {songId}.mp3
+                    val fileName = songDetails?.audioFileName ?: "${songId}.mp3"
+                    mediaPlayerService?.loadSongByFile(fileName, titleText, songId)
+                }
+                
                 hasAudio = true
 
                 ui.postDelayed({
@@ -342,13 +350,19 @@ class SongPlayerFragment : Fragment() {
                         val duration = mediaPlayerService?.getDuration() ?: 0
                         seek.max = duration
                         txtTotal.text = formatMs(duration)
-                        txtElapsed.text = "00:00"
+                        
+                        // Get current position instead of resetting to 00:00
+                        val currentPos = mediaPlayerService?.getCurrentPosition() ?: 0
+                        txtElapsed.text = formatMs(currentPos)
+                        
                         val isPlaying = mediaPlayerService?.isPlaying() ?: false
                         btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause_24 else R.drawable.ic_play_24)
                         
-                        // Apply saved speed for this song
-                        val savedSpeed = SpeedManager.getSpeed(songId)
-                        mediaPlayerService?.setPlaybackSpeed(savedSpeed)
+                        // Apply saved speed for this song (only if not already set)
+                        if (!isSameSong) {
+                            val savedSpeed = SpeedManager.getSpeed(songId)
+                            mediaPlayerService?.setPlaybackSpeed(savedSpeed)
+                        }
                         updateSpeedButton()
                         
                         // Set god ID and lyrics for notification
