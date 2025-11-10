@@ -1,5 +1,6 @@
 package com.example.divneblessing_v0
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.activity.enableEdgeToEdge
@@ -261,8 +262,35 @@ class MainActivity : AppCompatActivity() {
 
         updateMiniVisibility() // also re-applies margins based on visibility
 
+        // Request notification permission for Android 13+
+        ensureNotificationPermission()
+        
         // Start periodic updates for mini player UI & visibility
         ui.post(ticker)
+        
+        // Handle notification click to open player
+        handleNotificationIntent(intent)
+    }
+    
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+    
+    private fun handleNotificationIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("openPlayer", false) == true) {
+            val songId = intent.getStringExtra("songId")
+            val title = intent.getStringExtra("title")
+            if (songId != null && title != null) {
+                val bundle = Bundle().apply {
+                    putString("songId", songId)
+                    putString("title", title)
+                }
+                val navHostFragment = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
+                navHostFragment?.navController?.navigate(R.id.songPlayerFragment, bundle)
+            }
+        }
     }
 
     private fun updateMiniUI() {
@@ -431,6 +459,17 @@ class MainActivity : AppCompatActivity() {
         if (serviceBound) {
             unbindService(serviceConnection)
             serviceBound = false
+        }
+    }
+
+    private fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+            }
         }
     }
 }

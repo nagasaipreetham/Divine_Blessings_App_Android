@@ -350,6 +350,10 @@ class SongPlayerFragment : Fragment() {
                         val savedSpeed = SpeedManager.getSpeed(songId)
                         mediaPlayerService?.setPlaybackSpeed(savedSpeed)
                         updateSpeedButton()
+                        
+                        // Set god ID and lyrics for notification
+                        mediaPlayerService?.setGodId(godId)
+                        mediaPlayerService?.setLyrics(lines)
                     } catch (e: Exception) {
                         android.util.Log.e("SongPlayer", "Error setting up UI after delay: ${e.message}")
                     }
@@ -442,6 +446,9 @@ class SongPlayerFragment : Fragment() {
             lines = (parsedLines ?: emptyList()).dropWhile { it.text.isBlank() }
             android.util.Log.d("SongPlayer", "Parsed lyrics lines: ${lines.size}")
             adapter.submit(lines)
+
+            // Update lyrics in notification
+            mediaPlayerService?.setLyrics(lines)
 
             // Re-enable and immediately sync highlight + center
             autoCenterEnabled = true

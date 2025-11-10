@@ -139,7 +139,7 @@ interface LyricsDao {
         ContentAsset::class,
         LyricsEntry::class
     ],
-    version = 1, // Incremented version to 1
+    version = 6, // Incremented version to 6 to fix schema mismatch
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -192,42 +192,11 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
-        // Migration from 4 to 5 - handles the corrupted database state
+        // Migration from 4 to 5 - no schema changes needed
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Create a backup of existing data
-                db.execSQL("CREATE TABLE songs_backup AS SELECT * FROM songs WHERE 1=0")
-                db.execSQL("INSERT INTO songs_backup SELECT * FROM songs")
-                
-                // Create new songs table with proper schema
-                db.execSQL("DROP TABLE IF EXISTS songs_new")
-                db.execSQL("""
-                    CREATE TABLE songs_new (
-                        id TEXT PRIMARY KEY NOT NULL,
-                        title TEXT NOT NULL,
-                        godId TEXT NOT NULL,
-                        languageDefault TEXT NOT NULL DEFAULT 'telugu',
-                        audioFileName TEXT NOT NULL,
-                        lyricsTeluguFileName TEXT,
-                        lyricsEnglishFileName TEXT,
-                        duration INTEGER NOT NULL,
-                        displayOrder INTEGER NOT NULL
-                    )
-                """)
-                
-                // Copy data from backup to new table
-                db.execSQL("""
-                    INSERT INTO songs_new (id, title, godId, languageDefault, audioFileName, 
-                                         lyricsTeluguFileName, lyricsEnglishFileName, duration, displayOrder)
-                    SELECT id, title, godId, 'telugu', audioFileName, 
-                           lyricsFileName, NULL, duration, displayOrder
-                    FROM songs_backup
-                """)
-                
-                // Drop old tables and rename new one
-                db.execSQL("DROP TABLE songs")
-                db.execSQL("ALTER TABLE songs_new RENAME TO songs")
-                db.execSQL("DROP TABLE songs_backup")
+                // Version 4 already has the correct schema from MIGRATION_3_4
+                // No changes needed, just version bump
             }
         }
 
@@ -240,8 +209,12 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
-        // NOTE: Remove both duplicate declarations of MIGRATION_4_5 from this file.
-        // We will rely on fallback-to-destructive migration instead of custom MIGRATION_4_5.
+        // Migration from 5 to 6 - no schema changes, just version bump
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema changes needed, just version bump
+            }
+        }
 
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -250,8 +223,8 @@ abstract class DivineDatabase : RoomDatabase() {
                     DivineDatabase::class.java,
                     "divine_database"
                 )
-                // Remove: .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                // Rely on destructive fallback to recreate DB when the version changes.
+                // Use destructive migration to handle all migration issues
+                // This will recreate the database if any migration fails
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
