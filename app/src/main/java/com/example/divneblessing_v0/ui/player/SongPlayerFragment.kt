@@ -338,20 +338,32 @@ class SongPlayerFragment : Fragment() {
                 
                 // Only load the song if it's different from what's currently playing
                 if (!isSameSong) {
-                    // Use explicit audio file name from DB; fallback to {songId}.mp3
-                    val fileName = songDetails?.audioFileName ?: "${songId}.mp3"
-                    mediaPlayerService?.loadSongByFile(fileName, titleText, songId)
+                    // Load song from cloud using new loadSong method
+                    mediaPlayerService?.loadSong(songId, titleText)
                 }
                 
                 hasAudio = true
 
-                ui.postDelayed({
+                // Wait for ExoPlayer to buffer and get duration (streaming needs more time)
+                var retryCount = 0
+                fun updateDuration() {
                     try {
                         val duration = mediaPlayerService?.getDuration() ?: 0
-                        seek.max = duration
-                        txtTotal.text = formatMs(duration)
                         
-                        // Get current position instead of resetting to 00:00
+                        // If duration is still 0 and we haven't retried too many times, try again
+                        if (duration <= 0 && retryCount < 10) {
+                            retryCount++
+                            ui.postDelayed({ updateDuration() }, 500)
+                            return
+                        }
+                        
+                        // Update UI with duration
+                        if (duration > 0) {
+                            seek.max = duration
+                            txtTotal.text = formatMs(duration)
+                        }
+                        
+                        // Get current position
                         val currentPos = mediaPlayerService?.getCurrentPosition() ?: 0
                         txtElapsed.text = formatMs(currentPos)
                         
@@ -369,9 +381,12 @@ class SongPlayerFragment : Fragment() {
                         mediaPlayerService?.setGodId(godId)
                         mediaPlayerService?.setLyrics(lines)
                     } catch (e: Exception) {
-                        android.util.Log.e("SongPlayer", "Error setting up UI after delay: ${e.message}")
+                        android.util.Log.e("SongPlayer", "Error setting up UI: ${e.message}")
                     }
-                }, 500)
+                }
+                
+                // Start checking for duration
+                ui.postDelayed({ updateDuration() }, 500)
             } catch (e: Exception) {
                 android.util.Log.e("SongPlayer", "Error loading song: ${e.message}")
                 hasAudio = false
@@ -528,6 +543,13 @@ class SongPlayerFragment : Fragment() {
                 txtElapsed.text = formatMs(cur)
                 if (!userSeeking) {
                     seek.progress = cur
+                }
+
+                // Check and update duration if not set yet (for streaming)
+                val duration = mediaPlayerService?.getDuration() ?: 0
+                if (duration > 0 && seek.max != duration) {
+                    seek.max = duration
+                    txtTotal.text = formatMs(duration)
                 }
 
                 // Highlight on every tick (16ms interval)

@@ -19,11 +19,15 @@ data class Song(
     val title: String,
     val godId: String,
     val languageDefault: String = "telugu", // "telugu" or "english"
-    val audioFileName: String,
+    val audioFileName: String, // For assets (sample songs in APK)
+    val audioFileURL: String, // Cloudflare R2 URL for download
     val lyricsTeluguFileName: String? = null,
     val lyricsEnglishFileName: String? = null,
     val duration: Int = 0, // in milliseconds
-    val displayOrder: Int = 0
+    val displayOrder: Int = 0,
+    val isDownloaded: Boolean = false, // Track if song is downloaded
+    val localFilePath: String? = null, // Path to downloaded file in filesDir
+    val fileSizeBytes: Long = 0 // File size for download progress
 )
 
 @Entity(tableName = "favorites")
@@ -61,7 +65,8 @@ data class SongItem(
     val title: String,
     val godId: String,
     val godName: String,
-    var isFavorite: Boolean = false
+    var isFavorite: Boolean = false,
+    var isDownloaded: Boolean = false
 )
 
 // Search result model

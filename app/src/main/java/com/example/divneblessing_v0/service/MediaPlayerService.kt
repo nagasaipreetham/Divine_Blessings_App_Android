@@ -56,7 +56,7 @@ class MediaPlayerService : Service() {
             object : Runnable {
                 override fun run() {
                     updateNotificationIfNeeded()
-                    notificationHandler.postDelayed(this, 100) // Update every 100ms for instant lyrics sync
+                    notificationHandler.postDelayed(this, 10) // Update every 10ms for instant lyrics sync
                 }
             }
 
@@ -285,34 +285,50 @@ class MediaPlayerService : Service() {
             try {
                 val app = application as? com.example.divneblessing_v0.DivineApplication
                 isFavorite = app?.repository?.isFavorite(songId)?.first() ?: false
+                
+                // Get song from database
+                val song = app?.repository?.getSongById(songId)
+                
                 withContext(Dispatchers.Main) {
+                    if (song != null) {
+                        // Check if song is downloaded locally
+                        val uri = if (song.isDownloaded && !song.localFilePath.isNullOrEmpty()) {
+                            // Play from local file
+                            android.net.Uri.parse(song.localFilePath)
+                        } else if (song.audioFileURL.isNotEmpty()) {
+                            // Play from Cloudflare URL
+                            android.net.Uri.parse(song.audioFileURL)
+                        } else {
+                            // Fallback to asset file
+                            android.net.Uri.parse("asset:///audio/${song.audioFileName}")
+                        }
+                        
+                        val mediaItem = androidx.media3.common.MediaItem.Builder()
+                            .setUri(uri)
+                            .setMediaId(songId)
+                            .setMediaMetadata(
+                                androidx.media3.common.MediaMetadata.Builder()
+                                    .setTitle(title)
+                                    .setArtist("Divine Blessing")
+                                    .build()
+                            )
+                            .build()
+
+                        exoPlayer?.apply {
+                            setMediaItem(mediaItem)
+                            prepare()
+                            playWhenReady = true
+                        }
+                    }
+                    
                     playerNotificationManager?.invalidate()
+                    notificationHandler.removeCallbacks(notificationUpdateRunnable)
+                    notificationHandler.post(notificationUpdateRunnable)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "Error loading song", e)
+            }
         }
-
-        // ExoPlayer: play asset:///audio/<file>
-        val uri = android.net.Uri.parse("asset:///audio/$songId")
-        val mediaItem = androidx.media3.common.MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(songId)
-            .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist("Divine Blessing")
-                    .build()
-            )
-            .build()
-
-        exoPlayer?.apply {
-            setMediaItem(mediaItem)
-            prepare()
-            playWhenReady = true
-        }
-
-        playerNotificationManager?.invalidate()
-        notificationHandler.removeCallbacks(notificationUpdateRunnable)
-        notificationHandler.post(notificationUpdateRunnable)
     }
     fun loadSongByFile(audioFileName: String, title: String, songId: String? = null) {
         currentAudioFileName = audioFileName
@@ -512,6 +528,29 @@ class MediaPlayerService : Service() {
                     Log.e(TAG, "Error in loadGodImageIfNeeded", e)
                 }
             }
+        }
+
+        override fun onTaskRemoved(rootIntent: Intent?) {
+            super.onTaskRemoved(rootIntent)
+            
+            // Stop playback immediately
+            exoPlayer?.stop()
+            exoPlayer?.clearMediaItems()
+            
+            // Remove notification and stop foreground
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping foreground", e)
+            }
+            
+            // Stop the service
+            stopSelf()
         }
 
         override fun onDestroy() {

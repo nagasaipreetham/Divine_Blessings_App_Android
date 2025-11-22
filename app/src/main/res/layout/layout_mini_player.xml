@@ -34,7 +34,7 @@
             <Button
                 android:id="@+id/mini_player_speed"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="30dp"
                 android:layout_marginStart="8dp"
                 android:background="@drawable/bg_speed_button"
                 android:minWidth="48dp"
@@ -42,7 +42,7 @@
                 android:paddingEnd="8dp"
                 android:text="1.0x"
                 android:textColor="@android:color/white"
-                android:textSize="11sp" />
+                android:textSize="10sp" />
         </LinearLayout>
 
         <SeekBar

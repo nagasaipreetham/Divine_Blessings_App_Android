@@ -15,8 +15,11 @@ import com.bumptech.glide.Glide
 import com.example.divneblessing_v0.DivineApplication
 import com.example.divneblessing_v0.R
 import com.example.divneblessing_v0.data.SongItem
+import com.example.divneblessing_v0.service.SongDownloadManager
+import com.example.divneblessing_v0.service.DownloadProgress
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 class GodCategoryFragment : Fragment() {
 
@@ -24,6 +27,7 @@ class GodCategoryFragment : Fragment() {
     private var godName: String = "Songs"
     private var godImageFileName: String = "vishnu.png"
     private lateinit var adapter: GodSongsAdapter
+    private lateinit var downloadManager: SongDownloadManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +71,9 @@ class GodCategoryFragment : Fragment() {
         val recyclerView = view.findViewById<RecyclerView>(R.id.recycler_songs)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
 
+        val repository = (requireActivity().application as DivineApplication).repository
+        downloadManager = SongDownloadManager(requireContext(), repository)
+
         adapter = GodSongsAdapter(
             items = mutableListOf<SongItem>(), // FIX: Explicit type
             onPlay = { song ->
@@ -77,8 +84,14 @@ class GodCategoryFragment : Fragment() {
                 }
                 findNavController().navigate(R.id.songPlayerFragment, args)
             },
-            onToggleLike = { song, isFavorite ->
-                toggleFavorite(song.id, isFavorite)
+            onToggleLike = { song, _ ->
+                toggleFavorite(song.id)
+            },
+            onDownload = { song ->
+                downloadSong(song)
+            },
+            onDelete = { song ->
+                deleteSong(song)
             }
         )
         recyclerView.adapter = adapter
@@ -97,7 +110,7 @@ class GodCategoryFragment : Fragment() {
         }
     }
 
-    private fun toggleFavorite(songId: String, isFavorite: Boolean) {
+    private fun toggleFavorite(songId: String) {
         val repository = (requireActivity().application as DivineApplication).repository
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -105,6 +118,67 @@ class GodCategoryFragment : Fragment() {
                 repository.toggleFavorite(songId)
             } catch (e: Exception) {
                 android.util.Log.e("GodCategoryFragment", "Favorite toggle error: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun downloadSong(song: SongItem) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val repository = (requireActivity().application as DivineApplication).repository
+                val songEntity = repository.getSongById(song.id)
+                
+                if (songEntity == null || songEntity.audioFileURL.isEmpty()) {
+                    Toast.makeText(requireContext(), "Download URL not available", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                
+                Toast.makeText(requireContext(), "Downloading ${song.title}...", Toast.LENGTH_SHORT).show()
+                
+                val downloadId = downloadManager.downloadSong(
+                    songId = song.id,
+                    audioFileURL = songEntity.audioFileURL,
+                    title = song.title
+                )
+                
+                if (downloadId > 0) {
+                    // Observe download progress
+                    downloadManager.observeDownload(downloadId).collect { progress ->
+                        when (progress) {
+                            is DownloadProgress.Completed -> {
+                                repository.markSongAsDownloaded(song.id, progress.localUri, progress.fileSize)
+                                Toast.makeText(requireContext(), "Downloaded ${song.title}", Toast.LENGTH_SHORT).show()
+                            }
+                            is DownloadProgress.Failed -> {
+                                Toast.makeText(requireContext(), "Download failed", Toast.LENGTH_SHORT).show()
+                            }
+                            is DownloadProgress.Downloading -> {
+                                // Could update UI with progress here
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(requireContext(), "Download error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun deleteSong(song: SongItem) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val repository = (requireActivity().application as DivineApplication).repository
+                val songEntity = repository.getSongById(song.id)
+                
+                val success = downloadManager.deleteSong(song.id, songEntity?.localFilePath)
+                
+                if (success) {
+                    Toast.makeText(requireContext(), "Deleted ${song.title}", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(requireContext(), "Failed to delete", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(requireContext(), "Delete error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }

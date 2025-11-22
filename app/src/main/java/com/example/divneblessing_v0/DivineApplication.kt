@@ -31,10 +31,14 @@ class DivineApplication : Application() {
             // Initialize default settings
             repository.initializeDefaultSettings()
 
-            // Other background tasks can go here
+            // Other background tasks
             repository.resetAllSongCounters()
+            
+            // Track assets and preprocess lyrics (done in one call)
             repository.reconcileAssets(this@DivineApplication)
-            repository.preprocessAllLyrics(this@DivineApplication)
+            
+            // Compact database to reduce storage (checkpoint WAL file)
+            repository.compactDatabase()
         }
     }
 

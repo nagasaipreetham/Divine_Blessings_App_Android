@@ -40,6 +40,12 @@ interface SongDao {
 
     @Query("DELETE FROM songs")
     suspend fun deleteAllSongs()
+
+    @Query("UPDATE songs SET isDownloaded = :isDownloaded, localFilePath = :localFilePath, fileSizeBytes = :fileSize WHERE id = :songId")
+    suspend fun updateDownloadStatus(songId: String, isDownloaded: Boolean, localFilePath: String?, fileSize: Long)
+
+    @Query("SELECT * FROM songs WHERE isDownloaded = 1 ORDER BY displayOrder ASC")
+    fun getDownloadedSongs(): Flow<List<Song>>
 }
 
 @Dao
@@ -110,10 +116,14 @@ data class SongWithGod(
     val godId: String,
     val languageDefault: String,
     val audioFileName: String,
+    val audioFileURL: String,
     val lyricsTeluguFileName: String?,
     val lyricsEnglishFileName: String?,
     val duration: Int,
     val displayOrder: Int,
+    val isDownloaded: Boolean,
+    val localFilePath: String?,
+    val fileSizeBytes: Long,
     val godName: String
 )
 
@@ -139,7 +149,7 @@ interface LyricsDao {
         ContentAsset::class,
         LyricsEntry::class
     ],
-    version = 6, // Incremented version to 6 to fix schema mismatch
+    version = 7, // Incremented to 7 for cloud streaming support
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {

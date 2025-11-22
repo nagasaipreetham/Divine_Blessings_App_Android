@@ -108,7 +108,8 @@ class DivineRepository(private val database: DivineDatabase) {
                     title = song.title,
                     godId = song.godId,
                     godName = "", // Will be filled by UI layer
-                    isFavorite = favoriteIds.contains(song.id)
+                    isFavorite = favoriteIds.contains(song.id),
+                    isDownloaded = song.isDownloaded
                 )
             }
         }
@@ -193,11 +194,15 @@ class DivineRepository(private val database: DivineDatabase) {
                         title = s.optString("title"),
                         godId = s.optString("godId", god.id),
                         languageDefault = s.optString("languageDefault", "telugu"),
-                        audioFileName = s.optString("audioFileName", ""), // non-null field
+                        audioFileName = s.optString("audioFileName", ""),
+                        audioFileURL = s.optString("audioFileURL", ""),
                         lyricsTeluguFileName = s.optString("lyricsTeluguFileName", null),
                         lyricsEnglishFileName = s.optString("lyricsEnglishFileName", null),
                         duration = s.optInt("duration", 0),
-                        displayOrder = s.optInt("displayOrder", 0)
+                        displayOrder = s.optInt("displayOrder", 0),
+                        isDownloaded = false,
+                        localFilePath = null,
+                        fileSizeBytes = s.optLong("fileSizeBytes", 0)
                     )
                     database.songDao().insert(song)
                 }
@@ -239,10 +244,44 @@ class DivineRepository(private val database: DivineDatabase) {
     }
 
     /**
-     * Reconcile DB with APK assets and mirror assets into filesDir for future updates.
-     * - Scans audio, lyrics, and common image folders in assets
-     * - Upserts "assets" source entries into the assets table
-     * - Copies assets to filesDir/content/<type>/... and upserts "files" source entries with checksum/version
+     * Compact the database by checkpointing the WAL file.
+     * This reduces storage usage by merging the WAL into the main database file.
+     */
+    suspend fun compactDatabase() {
+        try {
+            database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+            android.util.Log.d("Repository", "Database compacted successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("Repository", "Failed to compact database", e)
+        }
+    }
+
+    /**
+     * Mark song as downloaded and save local file path
+     */
+    suspend fun markSongAsDownloaded(songId: String, localFilePath: String, fileSize: Long) {
+        database.songDao().updateDownloadStatus(songId, true, localFilePath, fileSize)
+    }
+
+    /**
+     * Mark song as not downloaded and clear local file path
+     */
+    suspend fun markSongAsNotDownloaded(songId: String) {
+        database.songDao().updateDownloadStatus(songId, false, null, 0)
+    }
+
+    /**
+     * Get all downloaded songs
+     */
+    fun getDownloadedSongs(): Flow<List<Song>> {
+        return database.songDao().getDownloadedSongs()
+    }
+
+    /**
+     * Track assets in database and preprocess lyrics.
+     * - Scans audio, lyrics, and image folders in assets
+     * - Tracks metadata in database (no file copying)
+     * - Preprocesses lyrics into Room DB for fast access
      */
     suspend fun reconcileAssets(context: android.content.Context) {
         val am = context.assets
@@ -263,6 +302,7 @@ class DivineRepository(private val database: DivineDatabase) {
                 val size = safeSize(am, relPath) ?: 0L
                 val checksum = safeChecksum(am, relPath)
 
+                // Track asset metadata in database (no file copying)
                 database.assetDao().upsert(
                     ContentAsset(
                         path = relPath,
@@ -274,41 +314,10 @@ class DivineRepository(private val database: DivineDatabase) {
                         source = "assets"
                     )
                 )
-
-                // Mirror into filesDir/content/<type>/<subpath>
-                val subPath = relPath.removePrefix("$folder/")
-                val destFile = java.io.File(context.filesDir, "content/$type/$subPath")
-                destFile.parentFile?.mkdirs()
-
-                val needsCopy = !destFile.exists() || checksum == null || checksum != safeFileChecksum(destFile)
-                if (needsCopy) {
-                    try {
-                        copyAssetToFile(am, relPath, destFile)
-                        val fileChecksum = safeFileChecksum(destFile)
-                        val existingFilesEntry = database.assetDao()
-                            .getByType(type)
-                            .find { it.path == relPath && it.source == "files" }
-
-                        val nextVersion = (existingFilesEntry?.version ?: 0) + 1
-                        database.assetDao().upsert(
-                            ContentAsset(
-                                path = relPath,
-                                type = type,
-                                version = nextVersion,
-                                checksum = fileChecksum,
-                                sizeBytes = destFile.length(),
-                                lastUpdated = now,
-                                source = "files"
-                            )
-                        )
-                    } catch (e: Exception) {
-                        android.util.Log.e("Repository", "Failed to mirror asset $relPath → ${destFile.absolutePath}", e)
-                    }
-                }
             }
         }
 
-        // Preprocess lyrics into DB after reconciling files
+        // Preprocess lyrics into DB for fast access
         preprocessAllLyrics(context)
     }
 

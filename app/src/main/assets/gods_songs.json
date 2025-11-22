@@ -1,5 +1,6 @@
 {
-  "version": "20251108194018",
+  "version": "20251122154434",
+  "cloudflareBaseUrl": "https://pub-ea778d24afc5464bbb1b2c6c823d331b.r2.dev/audio",
   "gods": [
     {
       "id": "god_vishnu",
@@ -13,6 +14,7 @@
           "godId": "god_vishnu",
           "languageDefault": "telugu",
           "audioFileName": "song_1.mp3",
+          "audioFileURL": "https://pub-ea778d24afc5464bbb1b2c6c823d331b.r2.dev/audio/song_1.mp3",
           "lyricsTeluguFileName": "song_1_te.lrc",
           "lyricsEnglishFileName": "song_1_en.lrc",
           "duration": 0,
@@ -32,6 +34,7 @@
           "godId": "god_shiva",
           "languageDefault": "telugu",
           "audioFileName": "Lingashtakam.mp3",
+          "audioFileURL": "https://pub-ea778d24afc5464bbb1b2c6c823d331b.r2.dev/audio/Lingashtakam.mp3",
           "lyricsTeluguFileName": "Lingashtakam_te.lrc",
           "lyricsEnglishFileName": "Lingashtakam_en.lrc",
           "duration": 0,
@@ -51,6 +54,7 @@
           "godId": "god_hanuman",
           "languageDefault": "telugu",
           "audioFileName": "Hanuman_Chalisa.mp3",
+          "audioFileURL": "https://pub-ea778d24afc5464bbb1b2c6c823d331b.r2.dev/audio/Hanuman_Chalisa.mp3",
           "lyricsTeluguFileName": "Hanuman_Chalisa_te.lrc",
           "lyricsEnglishFileName": "Hanuman_Chalisa_en.lrc",
           "duration": 0,
