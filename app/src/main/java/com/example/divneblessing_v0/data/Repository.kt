@@ -153,21 +153,33 @@ class DivineRepository(private val database: DivineDatabase) {
 
     // Method: populateDatabaseFromJsonIfNeeded
     suspend fun populateDatabaseFromJsonIfNeeded(context: Context) {
-        val jsonString = try {
-            context.assets.open("gods_songs.json").bufferedReader().use { it.readText() }
-        } catch (_: Exception) { return }
-    
-        val obj = try { JSONObject(jsonString) } catch (_: Exception) { return }
-    
-        val jsonVersionStr = obj.optString("version", "0")
-        val jsonVersion = jsonVersionStr.toLongOrNull() ?: 0L
-    
-        val prefs = context.getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
-        val storedVersionStr = prefs.getString("version", null)
-        val storedVersion = storedVersionStr?.toLongOrNull() ?: 0L
-    
-        // Also populate when DB is empty (fresh install or cleared storage)
-        val isDbEmpty = try { database.godDao().getAllGods().first().isEmpty() } catch (_: Exception) { true }
+        try {
+            val jsonString = try {
+                context.assets.open("gods_songs.json").bufferedReader().use { it.readText() }
+            } catch (e: Exception) { 
+                android.util.Log.e("Repository", "Failed to read gods_songs.json", e)
+                return 
+            }
+        
+            val obj = try { JSONObject(jsonString) } catch (e: Exception) { 
+                android.util.Log.e("Repository", "Failed to parse gods_songs.json", e)
+                return 
+            }
+        
+            val jsonVersionStr = obj.optString("version", "0")
+            val jsonVersion = jsonVersionStr.toLongOrNull() ?: 0L
+        
+            val prefs = context.getSharedPreferences("divine_settings", Context.MODE_PRIVATE)
+            val storedVersionStr = prefs.getString("version", null)
+            val storedVersion = storedVersionStr?.toLongOrNull() ?: 0L
+        
+            // Also populate when DB is empty (fresh install or cleared storage)
+            val isDbEmpty = try { 
+                database.godDao().getAllGods().first().isEmpty() 
+            } catch (e: Exception) { 
+                android.util.Log.w("Repository", "Could not check if DB is empty, assuming true", e)
+                true 
+            }
     
         if (jsonVersion > storedVersion || isDbEmpty) {
             database.godDao().deleteAllGods()
@@ -196,8 +208,8 @@ class DivineRepository(private val database: DivineDatabase) {
                         languageDefault = s.optString("languageDefault", "telugu"),
                         audioFileName = s.optString("audioFileName", ""),
                         audioFileURL = s.optString("audioFileURL", ""),
-                        lyricsTeluguFileName = s.optString("lyricsTeluguFileName", null),
-                        lyricsEnglishFileName = s.optString("lyricsEnglishFileName", null),
+                        lyricsTeluguFileName = s.optString("lyricsTeluguFileName", "").takeIf { it.isNotEmpty() },
+                        lyricsEnglishFileName = s.optString("lyricsEnglishFileName", "").takeIf { it.isNotEmpty() },
                         duration = s.optInt("duration", 0),
                         displayOrder = s.optInt("displayOrder", 0),
                         isDownloaded = false,
@@ -209,6 +221,9 @@ class DivineRepository(private val database: DivineDatabase) {
             }
     
             prefs.edit().putString("version", jsonVersionStr).apply()
+        }
+        } catch (e: Exception) {
+            android.util.Log.e("Repository", "Error in populateDatabaseFromJsonIfNeeded", e)
         }
     }
 
@@ -244,15 +259,29 @@ class DivineRepository(private val database: DivineDatabase) {
     }
 
     /**
-     * Compact the database by checkpointing the WAL file.
-     * This reduces storage usage by merging the WAL into the main database file.
+     * Compact the database by checkpointing the WAL and vacuuming.
+     * Vacuum reclaims free pages after checkpoint.
      */
     suspend fun compactDatabase() {
         try {
             database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
+            database.openHelper.writableDatabase.execSQL("VACUUM")
             android.util.Log.d("Repository", "Database compacted successfully")
         } catch (e: Exception) {
             android.util.Log.e("Repository", "Failed to compact database", e)
+        }
+    }
+
+    /**
+     * Remove legacy audio asset rows to reduce storage.
+     * Audio is streamed, so no local tracking is needed.
+     */
+    suspend fun cleanupLegacyAudioAssets() {
+        try {
+            database.assetDao().deleteByType("audio")
+            android.util.Log.d("Repository", "Legacy audio assets removed")
+        } catch (e: Exception) {
+            android.util.Log.e("Repository", "Failed to cleanup legacy audio assets", e)
         }
     }
 
@@ -278,74 +307,39 @@ class DivineRepository(private val database: DivineDatabase) {
     }
 
     /**
+     * Get total size of downloaded songs in bytes
+     */
+    suspend fun getDownloadedSongsSize(): Long {
+        return try {
+            database.songDao().getDownloadedSongs().first().sumOf { it.fileSizeBytes }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /**
      * Track assets in database and preprocess lyrics.
-     * - Scans audio, lyrics, and image folders in assets
+     * - Scans lyrics and images folders (NOT audio - streamed from cloud)
      * - Tracks metadata in database (no file copying)
      * - Preprocesses lyrics into Room DB for fast access
      */
     suspend fun reconcileAssets(context: android.content.Context) {
-        val am = context.assets
-        val now = System.currentTimeMillis()
+        try {
+            val am = context.assets
+            val now = System.currentTimeMillis()
 
-        val scanTargets = listOf(
-            "audio" to "audio",
-            "lyrics" to "lyrics",
-            "images" to "image",
-            "images/gods" to "image"
-        )
+            // REMOVED: Asset tracking with checksums (was causing 15-18MB database bloat)
+            // Assets are bundled in APK and don't need tracking
+            // Lyrics are preprocessed below for fast loading
 
-        for ((folder, type) in scanTargets) {
-            // Recursively list only files (skip directories)
-            val filePaths = listAssetFilesRecursively(am, folder)
-
-            for (relPath in filePaths) {
-                val size = safeSize(am, relPath) ?: 0L
-                val checksum = safeChecksum(am, relPath)
-
-                // Track asset metadata in database (no file copying)
-                database.assetDao().upsert(
-                    ContentAsset(
-                        path = relPath,
-                        type = type,
-                        version = 1,
-                        checksum = checksum,
-                        sizeBytes = size,
-                        lastUpdated = now,
-                        source = "assets"
-                    )
-                )
-            }
+            // Preprocess lyrics into DB for fast access
+            preprocessAllLyrics(context)
+        } catch (e: Exception) {
+            android.util.Log.e("Repository", "Error in reconcileAssets", e)
         }
-
-        // Preprocess lyrics into DB for fast access
-        preprocessAllLyrics(context)
     }
 
-    // Recursively list files under an assets directory path (returns full relative paths)
-    private fun listAssetFilesRecursively(am: android.content.res.AssetManager, dir: String): List<String> {
-        val result = mutableListOf<String>()
-
-        fun recurse(path: String) {
-            val children = try { am.list(path) } catch (_: Exception) { null }
-            if (children == null || children.isEmpty()) {
-                // If no children, try opening: if success, it's a file
-                try {
-                    am.open(path).close()
-                    result.add(path)
-                } catch (_: Exception) {
-                    // Not a file (or not accessible), skip
-                }
-            } else {
-                for (child in children) {
-                    val childPath = if (path.isEmpty()) child else "$path/$child"
-                    recurse(childPath)
-                }
-            }
-        }
-
-        recurse(dir)
-        return result
-    }
+    // Removed: listAssetFilesRecursively - no longer needed without asset tracking
 
     // Get preprocessed lyrics for (songId, language) from DB, or null if missing
     suspend fun getLyricsLines(songId: String, language: String): List<com.example.divneblessing_v0.ui.player.LrcLine>? {
@@ -355,40 +349,51 @@ class DivineRepository(private val database: DivineDatabase) {
 
     // Preprocess all assets lyrics into DB at startup (speeds up loading)
     suspend fun preprocessAllLyrics(context: Context) {
-        val am = context.assets
-        val folders = listOf("telugu" to "te", "english" to "en")
-        for ((lang, code) in folders) {
-            val dir = "lyrics/$lang"
-            val files = try { am.list(dir) ?: emptyArray() } catch (_: Exception) { emptyArray() }
-            for (name in files) {
-                if (!name.endsWith(".lrc", ignoreCase = true)) continue
-                // Expect "{songId}_{code}.lrc"
-                val base = name.removeSuffix(".lrc")
-                val expectedSuffix = "_$code"
-                if (!base.endsWith(expectedSuffix)) continue
-                val songId = base.removeSuffix(expectedSuffix)
-                val relPath = "$dir/$name"
+        try {
+            val am = context.assets
+            val folders = listOf("telugu" to "te", "english" to "en")
+            for ((lang, code) in folders) {
+                val dir = "lyrics/$lang"
+                val files = try { am.list(dir) ?: emptyArray() } catch (_: Exception) { 
+                    android.util.Log.w("Repository", "Could not list lyrics folder: $dir")
+                    emptyArray() 
+                }
+                for (name in files) {
+                    try {
+                        if (!name.endsWith(".lrc", ignoreCase = true)) continue
+                        // Expect "{songId}_{code}.lrc"
+                        val base = name.removeSuffix(".lrc")
+                        val expectedSuffix = "_$code"
+                        if (!base.endsWith(expectedSuffix)) continue
+                        val songId = base.removeSuffix(expectedSuffix)
+                        val relPath = "$dir/$name"
 
-                val lines = runCatching {
-                    am.open(relPath).use { input ->
-                        java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
-                            val raw = br.readLines()
-                            com.example.divneblessing_v0.ui.player.LrcParser.parse(raw)
-                        }
+                        val lines = runCatching {
+                            am.open(relPath).use { input ->
+                                java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { br ->
+                                    val raw = br.readLines()
+                                    com.example.divneblessing_v0.ui.player.LrcParser.parse(raw)
+                                }
+                            }
+                        }.getOrNull() ?: continue
+
+                        val json = linesToJson(lines)
+                        database.lyricsDao().upsert(
+                            LyricsEntry(
+                                songId = songId,
+                                language = if (lang == "english") "english" else "telugu",
+                                jsonLines = json,
+                                updatedAt = System.currentTimeMillis(),
+                                source = "assets"
+                            )
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.e("Repository", "Error preprocessing lyrics file: $name", e)
                     }
-                }.getOrNull() ?: continue
-
-                val json = linesToJson(lines)
-                database.lyricsDao().upsert(
-                    LyricsEntry(
-                        songId = songId,
-                        language = if (lang == "english") "english" else "telugu",
-                        jsonLines = json,
-                        updatedAt = System.currentTimeMillis(),
-                        source = "assets"
-                    )
-                )
+                }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("Repository", "Error in preprocessAllLyrics", e)
         }
     }
 
@@ -417,45 +422,5 @@ class DivineRepository(private val database: DivineDatabase) {
         return out
     }
 
-    private fun safeList(am: android.content.res.AssetManager, dir: String): Array<String> {
-        return try { am.list(dir) ?: emptyArray() } catch (_: Exception) { emptyArray() }
-    }
-    private fun safeSize(am: android.content.res.AssetManager, relPath: String): Long? {
-        return try { am.openFd(relPath).length } catch (_: Exception) {
-            try { am.open(relPath).use { it.available().toLong() } } catch (_: Exception) { null }
-        }
-    }
-    private fun safeChecksum(am: android.content.res.AssetManager, relPath: String): String? {
-        return try {
-            am.open(relPath).use { input ->
-                val buf = ByteArray(8192)
-                val digest = java.security.MessageDigest.getInstance("SHA-256")
-                var read: Int
-                while (true) {
-                    read = input.read(buf)
-                    if (read <= 0) break
-                    digest.update(buf, 0, read)
-                }
-                digest.digest().joinToString("") { "%02x".format(it) }
-            }
-        } catch (_: Exception) { null }
-    }
-    private fun safeFileChecksum(file: java.io.File): String? {
-        return try {
-            file.inputStream().use { input ->
-                val buf = ByteArray(8192)
-                val digest = java.security.MessageDigest.getInstance("SHA-256")
-                var read: Int
-                while (true) {
-                    read = input.read(buf)
-                    if (read <= 0) break
-                    digest.update(buf, 0, read)
-                }
-                digest.digest().joinToString("") { "%02x".format(it) }
-            }
-        } catch (_: Exception) { null }
-    }
-    private fun copyAssetToFile(am: android.content.res.AssetManager, relPath: String, dest: java.io.File) {
-        am.open(relPath).use { input -> dest.outputStream().use { output -> input.copyTo(output) } }
-    }
+    // Removed: safeSize and safeChecksum - no longer needed without asset tracking
 }

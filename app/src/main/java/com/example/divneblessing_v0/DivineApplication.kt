@@ -25,20 +25,27 @@ class DivineApplication : Application() {
         currentLanguage = sharedPrefs.getString("default_language", "telugu") ?: "telugu"
 
         applicationScope.launch {
-            // Populate database from JSON if needed
-            repository.populateDatabaseFromJsonIfNeeded(this@DivineApplication)
+            try {
+                // Populate database from JSON if needed
+                repository.populateDatabaseFromJsonIfNeeded(this@DivineApplication)
 
-            // Initialize default settings
-            repository.initializeDefaultSettings()
+                // Initialize default settings
+                repository.initializeDefaultSettings()
 
-            // Other background tasks
-            repository.resetAllSongCounters()
-            
-            // Track assets and preprocess lyrics (done in one call)
-            repository.reconcileAssets(this@DivineApplication)
-            
-            // Compact database to reduce storage (checkpoint WAL file)
-            repository.compactDatabase()
+                // Other background tasks
+                repository.resetAllSongCounters()
+
+                // Preprocess lyrics for fast loading (no asset tracking to save space)
+                repository.reconcileAssets(this@DivineApplication)
+
+                // Clean legacy audio asset rows (pre-cloud era)
+                repository.cleanupLegacyAudioAssets()
+
+                // Compact database to reclaim disk space
+                repository.compactDatabase()
+            } catch (e: Exception) {
+                android.util.Log.e("DivineApplication", "Error during initialization", e)
+            }
         }
     }
 

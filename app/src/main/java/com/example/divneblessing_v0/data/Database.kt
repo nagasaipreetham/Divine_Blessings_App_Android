@@ -226,6 +226,29 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
+        // Migration from 6 to 7 - add download fields to songs table
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Room doesn't like DEFAULT values in migrations - use a workaround
+                // 1. Add columns as nullable first
+                try { 
+                    db.execSQL("ALTER TABLE songs ADD COLUMN isDownloaded INTEGER") 
+                } catch (_: Exception) {}
+                try { 
+                    db.execSQL("ALTER TABLE songs ADD COLUMN localFilePath TEXT") 
+                } catch (_: Exception) {}
+                try { 
+                    db.execSQL("ALTER TABLE songs ADD COLUMN fileSizeBytes INTEGER") 
+                } catch (_: Exception) {}
+                
+                // 2. Update existing rows with default values
+                try {
+                    db.execSQL("UPDATE songs SET isDownloaded = 0 WHERE isDownloaded IS NULL")
+                    db.execSQL("UPDATE songs SET fileSizeBytes = 0 WHERE fileSizeBytes IS NULL")
+                } catch (_: Exception) {}
+            }
+        }
+
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = androidx.room.Room.databaseBuilder(
@@ -233,10 +256,21 @@ abstract class DivineDatabase : RoomDatabase() {
                     DivineDatabase::class.java,
                     "divine_database"
                 )
-                // Use destructive migration to handle all migration issues
-                // This will recreate the database if any migration fails
+                // Use destructive migration - simpler and safer for this app
+                // When schema changes, database is wiped and repopulated from JSON
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
+                // Clear SharedPreferences version when database is destroyed
+                .addCallback(object : RoomDatabase.Callback() {
+                    override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
+                        super.onDestructiveMigration(db)
+                        // Clear the version in SharedPreferences so data gets repopulated
+                        context.getSharedPreferences("divine_settings", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .remove("version")
+                            .apply()
+                    }
+                })
                 .build()
                 INSTANCE = instance
                 instance
@@ -246,13 +280,15 @@ abstract class DivineDatabase : RoomDatabase() {
 }
 
 // Assets table DAO (already present)
+// AssetDao (interface)
 @Dao
 interface AssetDao {
     @Query("SELECT * FROM assets")
     suspend fun getAll(): List<ContentAsset>
 
-    @Query("SELECT * FROM assets WHERE type = :type")
-    suspend fun getByType(type: String): List<ContentAsset>
+    // Remove any assets by type, e.g., legacy 'audio' entries
+    @Query("DELETE FROM assets WHERE type = :type")
+    suspend fun deleteByType(type: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(asset: ContentAsset)

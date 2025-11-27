@@ -56,7 +56,7 @@ class MediaPlayerService : Service() {
             object : Runnable {
                 override fun run() {
                     updateNotificationIfNeeded()
-                    notificationHandler.postDelayed(this, 10) // Update every 10ms for instant lyrics sync
+                    notificationHandler.postDelayed(this, 100) // Update every 100ms for instant lyrics sync
                 }
             }
 
@@ -101,6 +101,8 @@ class MediaPlayerService : Service() {
                 }
                 override fun createCurrentContentIntent(player: Player): PendingIntent? {
                     val intent = Intent(this@MediaPlayerService, com.example.divneblessing_v0.MainActivity::class.java)
+                    intent.putExtra("openPlayer", true)
+                    intent.putExtra("songId", currentSongId)
                     intent.putExtra("title", currentSongTitle)
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     return PendingIntent.getActivity(
@@ -285,42 +287,50 @@ class MediaPlayerService : Service() {
             try {
                 val app = application as? com.example.divneblessing_v0.DivineApplication
                 isFavorite = app?.repository?.isFavorite(songId)?.first() ?: false
-                
-                // Get song from database
+
                 val song = app?.repository?.getSongById(songId)
-                
+
                 withContext(Dispatchers.Main) {
                     if (song != null) {
-                        // Check if song is downloaded locally
-                        val uri = if (song.isDownloaded && !song.localFilePath.isNullOrEmpty()) {
-                            // Play from local file
-                            android.net.Uri.parse(song.localFilePath)
-                        } else if (song.audioFileURL.isNotEmpty()) {
-                            // Play from Cloudflare URL
-                            android.net.Uri.parse(song.audioFileURL)
-                        } else {
-                            // Fallback to asset file
-                            android.net.Uri.parse("asset:///audio/${song.audioFileName}")
-                        }
-                        
-                        val mediaItem = androidx.media3.common.MediaItem.Builder()
-                            .setUri(uri)
-                            .setMediaId(songId)
-                            .setMediaMetadata(
-                                androidx.media3.common.MediaMetadata.Builder()
-                                    .setTitle(title)
-                                    .setArtist("Divine Blessing")
-                                    .build()
-                            )
-                            .build()
+                        val uri: android.net.Uri? = when {
+                            song.isDownloaded && !song.localFilePath.isNullOrEmpty() ->
+                                android.net.Uri.parse(song.localFilePath)
 
-                        exoPlayer?.apply {
-                            setMediaItem(mediaItem)
-                            prepare()
-                            playWhenReady = true
+                            song.audioFileURL.isNotEmpty() ->
+                                android.net.Uri.parse(song.audioFileURL)
+
+                            else -> {
+                                // Only fall back to asset if the file actually exists
+                                val exists = try {
+                                    assets.openFd("audio/${song.audioFileName}").close(); true
+                                } catch (_: Exception) { false }
+                                if (exists) android.net.Uri.parse("asset:///audio/${song.audioFileName}") else null
+                            }
+                        }
+
+                        if (uri != null) {
+                            val mediaItem = androidx.media3.common.MediaItem.Builder()
+                                .setUri(uri)
+                                .setMediaId(songId)
+                                .setMediaMetadata(
+                                    androidx.media3.common.MediaMetadata.Builder()
+                                        .setTitle(title)
+                                        .setArtist("Divine Blessing")
+                                        .build()
+                                )
+                                .build()
+
+                            exoPlayer?.apply {
+                                setMediaItem(mediaItem)
+                                prepare()
+                                playWhenReady = true
+                            }
+                        } else {
+                            // No playable source; clear player for stability
+                            exoPlayer?.clearMediaItems()
+                            this@MediaPlayerService.isPlaying = false
                         }
                     }
-                    
                     playerNotificationManager?.invalidate()
                     notificationHandler.removeCallbacks(notificationUpdateRunnable)
                     notificationHandler.post(notificationUpdateRunnable)
@@ -336,23 +346,36 @@ class MediaPlayerService : Service() {
         currentSongTitle = title
 
         val idForItem = songId ?: audioFileName
-        val uri = android.net.Uri.parse("asset:///audio/$audioFileName")
-        val mediaItem = androidx.media3.common.MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(idForItem)
-            .setMediaMetadata(
-                androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist("Divine Blessing")
-                    .build()
-            )
-            .build()
 
-        exoPlayer?.apply {
-            setMediaItem(mediaItem)
-            prepare()
-            playWhenReady = true
+        // Guard against missing asset files
+        val exists = try {
+            assets.openFd("audio/$audioFileName").close(); true
+        } catch (_: Exception) { false }
+
+        val uri = if (exists) android.net.Uri.parse("asset:///audio/$audioFileName") else null
+
+        if (uri != null) {
+            val mediaItem = androidx.media3.common.MediaItem.Builder()
+                .setUri(uri)
+                .setMediaId(idForItem)
+                .setMediaMetadata(
+                    androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setArtist("Divine Blessing")
+                        .build()
+                )
+                .build()
+
+            exoPlayer?.apply {
+                setMediaItem(mediaItem)
+                prepare()
+                playWhenReady = true
+            }
+        } else {
+            exoPlayer?.clearMediaItems()
+            this.isPlaying = false
         }
+
         playerNotificationManager?.invalidate()
         notificationHandler.removeCallbacks(notificationUpdateRunnable)
         notificationHandler.post(notificationUpdateRunnable)
