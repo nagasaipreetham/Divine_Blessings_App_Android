@@ -85,6 +85,9 @@ class HomeFragment : Fragment() {
                     android.util.Log.d("HomeFragment", "Created ${godItems.size} god items")
                     adapter.updateItems(godItems)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal cancellation, ignore or rethrow
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("HomeFragment", "Error loading gods: ${e.message}", e)
             }

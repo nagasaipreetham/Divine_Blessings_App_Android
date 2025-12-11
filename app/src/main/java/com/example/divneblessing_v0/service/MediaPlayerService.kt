@@ -27,6 +27,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.PlayerNotificationManager
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MediaPlayerService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private val binder = LocalBinder()
@@ -520,35 +521,67 @@ class MediaPlayerService : Service() {
             }
         }
 
+        private var isImageLoading = false
+        private val failedGodImages = mutableSetOf<String>()
+
         private fun loadGodImageIfNeeded() {
-            if (currentGodBitmap != null) return
+            if (currentGodBitmap != null || isImageLoading) return
             
+            val songId = currentSongId ?: return
+            
+            // If we already tried and failed this song/god, don't retry endlessly
+            // We use songId as proxy, or we could fetch godId first.
+            // But we can't fetch godId without scope. 
+            // So we'll check inside the coroutine and only re-check if not failed before.
+            // Actually, we can't check 'failedGodImages' here easily without godId.
+            // Let's just launch and check inside.
+            
+            isImageLoading = true
             serviceScope.launch(Dispatchers.IO) {
                 try {
                     val app = application as? com.example.divneblessing_v0.DivineApplication
-                    val songId = currentSongId ?: return@launch
-                    val song = app?.repository?.getSongById(songId) ?: return@launch
-                    val god = app.repository.getGodById(song.godId) ?: return@launch
+                    val song = app?.repository?.getSongById(songId)
+                    if (song == null) {
+                        isImageLoading = false
+                        return@launch
+                    }
+                    
+                    val god = app.repository.getGodById(song.godId)
+                    if (god == null) {
+                        isImageLoading = false
+                        return@launch
+                    }
+
+                    // Check if this god image is known to fail
+                    if (failedGodImages.contains(god.imageFileName)) {
+                        isImageLoading = false
+                        return@launch
+                    }
                     
                     val imageFileName = god.imageFileName
                     if (imageFileName.isNotEmpty()) {
                         val bitmap = try {
-                            val inputStream = assets.open("images/gods/$imageFileName")
+                            // Fixed path: images are directly in assets/images/, not images/gods/
+                            val inputStream = assets.open("images/$imageFileName")
                             android.graphics.BitmapFactory.decodeStream(inputStream)
                         } catch (e: Exception) {
-                            Log.e(TAG, "Error loading god image", e)
+                            Log.e(TAG, "Error loading god image: $imageFileName", e)
+                            failedGodImages.add(imageFileName)
                             null
                         }
                         
-                        currentGodBitmap = bitmap
-                        currentGodImageFileName = imageFileName
-                        
-                        withContext(Dispatchers.Main) {
-                            playerNotificationManager?.invalidate()
+                        if (bitmap != null) {
+                            currentGodBitmap = bitmap
+                            currentGodImageFileName = imageFileName
+                            withContext(Dispatchers.Main) {
+                                playerNotificationManager?.invalidate()
+                            }
                         }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in loadGodImageIfNeeded", e)
+                } finally {
+                    isImageLoading = false
                 }
             }
         }

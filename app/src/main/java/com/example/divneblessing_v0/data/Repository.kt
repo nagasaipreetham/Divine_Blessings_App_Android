@@ -264,8 +264,10 @@ class DivineRepository(private val database: DivineDatabase) {
      */
     suspend fun compactDatabase() {
         try {
-            database.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL)")
-            database.openHelper.writableDatabase.execSQL("VACUUM")
+            // Use support database directly
+            val db = database.openHelper.writableDatabase
+            db.query("PRAGMA wal_checkpoint(FULL)").close()
+            db.query("VACUUM").close()
             android.util.Log.d("Repository", "Database compacted successfully")
         } catch (e: Exception) {
             android.util.Log.e("Repository", "Failed to compact database", e)
