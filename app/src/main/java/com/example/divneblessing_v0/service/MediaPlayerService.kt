@@ -397,6 +397,16 @@ class MediaPlayerService : Service() {
             return false
         }
 
+        fun pause() {
+            exoPlayer?.let { p ->
+                if (p.isPlaying) {
+                    p.pause()
+                    this.isPlaying = false
+                    playerNotificationManager?.invalidate()
+                }
+            }
+        }
+
         fun seekTo(position: Int) {
             exoPlayer?.seekTo(position.toLong())
             playerNotificationManager?.invalidate()

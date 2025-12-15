@@ -1,5 +1,5 @@
 {
-  "version": "20251122154434",
+  "version": "20251213183254",
   "cloudflareBaseUrl": "https://pub-ea778d24afc5464bbb1b2c6c823d331b.r2.dev/audio",
   "gods": [
     {
@@ -18,6 +18,17 @@
           "lyricsTeluguFileName": "song_1_te.lrc",
           "lyricsEnglishFileName": "song_1_en.lrc",
           "duration": 0,
+          "displayOrder": 1
+        }
+      ],
+      "slokas": [
+        {
+          "id": "sloka_vishnu_20251213183254",
+          "title": "Suklam Bharadaram",
+          "godId": "god_vishnu",
+          "languageDefault": "telugu",
+          "scriptTeluguFileName": "Suklam_Bharadharam_te.txt",
+          "scriptEnglishFileName": "Suklam_Bharadharam_en.txt",
           "displayOrder": 1
         }
       ]

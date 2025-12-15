@@ -53,6 +53,24 @@ data class UserSettings(
     val profileImagePath: String? = null
 )
 
+@Entity(tableName = "slokas")
+data class Sloka(
+    @PrimaryKey val id: String,
+    val title: String,
+    val godId: String,
+    val languageDefault: String = "telugu",
+    val scriptTeluguFileName: String? = null,
+    val scriptEnglishFileName: String? = null,
+    val displayOrder: Int = 0
+)
+
+@Entity(tableName = "sloka_counters")
+data class SlokaCounter(
+    @PrimaryKey val slokaId: String,
+    val count: Int = 0,
+    val lastUpdated: Long = System.currentTimeMillis()
+)
+
 // UI Models for RecyclerViews
 data class GodItem(
     val id: String,
@@ -67,6 +85,12 @@ data class SongItem(
     val godName: String,
     var isFavorite: Boolean = false,
     var isDownloaded: Boolean = false
+)
+
+data class SlokaItem(
+    val id: String,
+    val title: String,
+    val godId: String
 )
 
 // Search result model

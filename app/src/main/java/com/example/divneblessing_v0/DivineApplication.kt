@@ -77,4 +77,20 @@ class DivineApplication : Application() {
     fun getCurrentLyricsLanguageOrDefault(): String {
         return currentLyricsLanguage
     }
+    
+    // Sloka Language Persistence (Session-based)
+    // Defaults to 'english' initially or matches app default if desired, 
+    // but user requested: "if app default is english -> slokas english".
+    // "if user changes -> remember until app removed from recents"
+    private var slokaSessionLanguage: String? = null
+
+    fun getSlokaSessionLanguage(): String {
+        // If user hasn't chosen yet, return current app language 
+        // (assuming currentLanguage tracks the broad app setting "telugu"/"english")
+        return slokaSessionLanguage ?: currentLanguage
+    }
+
+    fun setSlokaSessionLanguage(lang: String) {
+        slokaSessionLanguage = lang
+    }
 }

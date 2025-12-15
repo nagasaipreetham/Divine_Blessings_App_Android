@@ -23,6 +23,10 @@ class DivineRepository(private val database: DivineDatabase) {
     
     fun getAllSongsWithGods(): Flow<List<SongWithGod>> = database.songDao().getAllSongsWithGods()
 
+    // Sloka operations
+    fun getSlokasByGod(godId: String): Flow<List<Sloka>> = database.slokaDao().getSlokasByGod(godId)
+    suspend fun getSlokaById(slokaId: String): Sloka? = database.slokaDao().getSlokaById(slokaId)
+
     // Favorite operations
     fun getAllFavorites(): Flow<List<Favorite>> = database.favoriteDao().getAllFavorites()
     
@@ -58,6 +62,17 @@ class DivineRepository(private val database: DivineDatabase) {
     // Reset all counters (called on cold app start)
     suspend fun resetAllSongCounters() {
         database.songCounterDao().resetAllCounters()
+    }
+
+    // Sloka counter operations
+    suspend fun getSlokaCounter(slokaId: String): Int {
+        return database.slokaCounterDao().getCounter(slokaId)?.count ?: 0
+    }
+    suspend fun updateSlokaCounter(slokaId: String, count: Int) {
+        database.slokaCounterDao().insertOrUpdateCounter(SlokaCounter(slokaId = slokaId, count = count))
+    }
+    suspend fun resetSlokaCounter(slokaId: String) {
+        database.slokaCounterDao().resetCounter(slokaId)
     }
 
     // User settings operations
@@ -184,6 +199,7 @@ class DivineRepository(private val database: DivineDatabase) {
         if (jsonVersion > storedVersion || isDbEmpty) {
             database.godDao().deleteAllGods()
             database.songDao().deleteAllSongs()
+            database.slokaDao().deleteAllSlokas()
     
             val godsArray = obj.optJSONArray("gods") ?: org.json.JSONArray()
             for (i in 0 until godsArray.length()) {
@@ -217,6 +233,22 @@ class DivineRepository(private val database: DivineDatabase) {
                         fileSizeBytes = s.optLong("fileSizeBytes", 0)
                     )
                     database.songDao().insert(song)
+                }
+
+                val slokasArray = g.optJSONArray("slokas") ?: org.json.JSONArray()
+                for (k in 0 until slokasArray.length()) {
+                    val s = slokasArray.optJSONObject(k) ?: continue
+
+                    val sloka = Sloka(
+                        id = s.optString("id"),
+                        title = s.optString("title"),
+                        godId = s.optString("godId", god.id),
+                        languageDefault = s.optString("languageDefault", "telugu"),
+                        scriptTeluguFileName = s.optString("scriptTeluguFileName", ""),
+                        scriptEnglishFileName = s.optString("scriptEnglishFileName", ""),
+                        displayOrder = s.optInt("displayOrder", 0)
+                    )
+                    database.slokaDao().insert(sloka)
                 }
             }
     

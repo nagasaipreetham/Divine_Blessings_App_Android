@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/header_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:fontFamily="sans-serif-medium"
+        android:text="Slokas"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+    <ImageView
+        android:id="@+id/header_arrow"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:contentDescription="Expand"
+        app:srcCompat="@drawable/ic_back_24"
+        app:tint="#FFFFFF"
+        android:rotation="270" /> 
+        <!-- 270 (pointing down) or 180 (pointing left/up)? Back is usually <- usually 180. 
+             Let's assume initial state is collapsed (pointing right/down?). 
+             If ic_back points LEFT. 
+             Rotation 180 -> Right (collapsed). 
+             Rotation 270 -> Down (expanded). 
+             I'll handle rotation in code. Initial: 180 (Right). -->
+
+</LinearLayout>

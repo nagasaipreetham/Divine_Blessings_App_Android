@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
             supportActionBar?.title = title
 
             // Hide bottom nav on full player, show otherwise
-            val onPlayer = destination.id == R.id.songPlayerFragment
+            val onPlayer = destination.id == R.id.songPlayerFragment || destination.id == R.id.slokaViewerFragment
             binding.bottomNav.visibility = if (onPlayer) View.GONE else View.VISIBLE
 
             // Refresh mini player visibility whenever destination changes
@@ -450,7 +450,8 @@ class MainActivity : AppCompatActivity() {
     private fun isOnFullPlayer(): Boolean {
         val navHost = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as? NavHostFragment
         val current = navHost?.childFragmentManager?.primaryNavigationFragment
-        return current is com.example.divneblessing_v0.ui.player.SongPlayerFragment
+        return current is com.example.divneblessing_v0.ui.player.SongPlayerFragment || 
+               current is com.example.divneblessing_v0.ui.god.SlokaViewerFragment
     }
 
     override fun onDestroy() {

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+
+    <!-- Scrollable Content Area -->
+
+    <!-- Right Rail Controls (Similar to Song Player) -->
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingStart="16dp"
+        android:paddingTop="16dp" 
+        android:paddingEnd="88dp"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/sloka_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="start"
+            android:lineSpacingExtra="10dp"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            tools:text="Sloka text goes here..." />
+    </androidx.core.widget.NestedScrollView>
+
+    <LinearLayout
+        android:layout_width="72dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginBottom="50dp"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingEnd="0dp">
+
+        <!-- Language Toggle -->
+        <Button
+            android:id="@+id/btnLangToggle"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            android:text="అ"
+            android:textColor="?attr/colorOnPrimary"
+            android:textSize="28sp"
+            android:padding="4dp"
+            android:gravity="center"
+            android:includeFontPadding="true" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="8dp" />
+
+        <ImageButton
+            android:id="@+id/btnPlusSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_plus_24"
+            app:tint="?attr/colorOnPrimary" />
+
+        <TextView
+            android:id="@+id/txtSmallCount"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_circle_btn"
+            android:gravity="center"
+            android:text="0"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="18sp" />
+
+        <ImageButton
+            android:id="@+id/btnMinusSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@drawable/ic_minus_24"
+            app:tint="?attr/colorOnPrimary" />
+
+        <ImageButton
+            android:id="@+id/btnResetSmall"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_btn_accent_round"
+            app:srcCompat="@android:drawable/ic_menu_revert"
+            app:tint="?attr/colorOnPrimary" />
+
+    </LinearLayout> 
+
+</FrameLayout>

@@ -21,7 +21,17 @@
         android:id="@+id/godCategoryFragment"
         android:name="com.example.divneblessing_v0.ui.god.GodCategoryFragment"
         android:label="Songs"
-        tools:layout="@layout/fragment_god_category" />
+        tools:layout="@layout/fragment_god_category">
+        <action
+            android:id="@+id/action_godCategory_to_slokaViewer"
+            app:destination="@id/slokaViewerFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/slokaViewerFragment"
+        android:name="com.example.divneblessing_v0.ui.god.SlokaViewerFragment"
+        android:label="Sloka Viewer"
+        tools:layout="@layout/fragment_sloka_viewer" />
 
     <fragment
         android:id="@+id/favoritesFragment"

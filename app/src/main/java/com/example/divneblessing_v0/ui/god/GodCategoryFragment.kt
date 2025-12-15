@@ -15,6 +15,7 @@ import com.bumptech.glide.Glide
 import com.example.divneblessing_v0.DivineApplication
 import com.example.divneblessing_v0.R
 import com.example.divneblessing_v0.data.SongItem
+import com.example.divneblessing_v0.data.SlokaItem
 import com.example.divneblessing_v0.service.SongDownloadManager
 import com.example.divneblessing_v0.service.DownloadProgress
 import kotlinx.coroutines.flow.collectLatest
@@ -26,7 +27,8 @@ class GodCategoryFragment : Fragment() {
     private var godId: String = "unknown_god"
     private var godName: String = "Songs"
     private var godImageFileName: String = "vishnu.png"
-    private lateinit var adapter: GodSongsAdapter
+    private lateinit var songsAdapter: GodSongsAdapter
+    private lateinit var slokaAdapter: SlokaAdapter
     private lateinit var downloadManager: SongDownloadManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,13 +71,24 @@ class GodCategoryFragment : Fragment() {
         }
 
         val recyclerView = view.findViewById<RecyclerView>(R.id.recycler_songs)
-        recyclerView.layoutManager = LinearLayoutManager(requireContext())
-
+        
         val repository = (requireActivity().application as DivineApplication).repository
         downloadManager = SongDownloadManager(requireContext(), repository)
 
-        adapter = GodSongsAdapter(
-            items = mutableListOf<SongItem>(), // FIX: Explicit type
+        // 1. Sloka Adapter
+        slokaAdapter = SlokaAdapter { slokaItem ->
+            // Navigate to Sloka Viewer
+            val bundle = Bundle().apply {
+                putString("slokaId", slokaItem.id)
+                putString("title", slokaItem.title)
+                putString("godId", slokaItem.godId)
+            }
+            findNavController().navigate(R.id.action_godCategory_to_slokaViewer, bundle)
+        }
+
+        // 2. Songs Adapter
+        songsAdapter = GodSongsAdapter(
+            items = mutableListOf<SongItem>(),
             onPlay = { song ->
                 val args = Bundle().apply {
                     putString("songId", song.id)
@@ -94,10 +107,16 @@ class GodCategoryFragment : Fragment() {
                 deleteSong(song)
             }
         )
-        recyclerView.adapter = adapter
+        
+        // Combine adapters: Slokas first, then Songs
+        val concatAdapter = androidx.recyclerview.widget.ConcatAdapter(slokaAdapter, songsAdapter)
+        
+        recyclerView.adapter = concatAdapter
+        recyclerView.layoutManager = LinearLayoutManager(requireContext())
 
-        // Load songs
+        // Load data
         loadSongs()
+        loadSlokas()
     }
 
     private fun loadSongs() {
@@ -105,7 +124,19 @@ class GodCategoryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             repository.getSongsByGodWithFavorites(godId).collectLatest { songs: List<SongItem> ->
-                adapter.updateItems(songs.toMutableList()) // FIX: Convert to mutable list
+                songsAdapter.updateItems(songs.toMutableList())
+            }
+        }
+    }
+
+    private fun loadSlokas() {
+        val repository = (requireActivity().application as DivineApplication).repository
+        viewLifecycleOwner.lifecycleScope.launch {
+            repository.getSlokasByGod(godId).collectLatest { slokas ->
+                val items = slokas.map { 
+                    SlokaItem(it.id, it.title, it.godId) 
+                }
+                slokaAdapter.updateItems(items)
             }
         }
     }

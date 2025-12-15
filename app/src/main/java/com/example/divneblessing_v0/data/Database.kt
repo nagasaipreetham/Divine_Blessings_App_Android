@@ -137,6 +137,33 @@ interface LyricsDao {
     suspend fun upsert(entry: LyricsEntry)
 }
 
+@Dao
+interface SlokaDao {
+    @Query("SELECT * FROM slokas WHERE godId = :godId ORDER BY displayOrder ASC")
+    fun getSlokasByGod(godId: String): Flow<List<Sloka>>
+
+    @Query("SELECT * FROM slokas WHERE id = :id")
+    suspend fun getSlokaById(id: String): Sloka?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(sloka: Sloka)
+
+    @Query("DELETE FROM slokas")
+    suspend fun deleteAllSlokas()
+}
+
+@Dao
+interface SlokaCounterDao {
+    @Query("SELECT * FROM sloka_counters WHERE slokaId = :slokaId")
+    suspend fun getCounter(slokaId: String): SlokaCounter?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateCounter(counter: SlokaCounter)
+
+    @Query("DELETE FROM sloka_counters WHERE slokaId = :slokaId")
+    suspend fun resetCounter(slokaId: String)
+}
+
 // Main Database
 // Class: DivineDatabase
 @Database(
@@ -147,9 +174,11 @@ interface LyricsDao {
         SongCounter::class,
         UserSettings::class,
         ContentAsset::class,
-        LyricsEntry::class
+        LyricsEntry::class,
+        Sloka::class,
+        SlokaCounter::class
     ],
-    version = 7, // Incremented to 7 for cloud streaming support
+    version = 8, // Incremented to 8 for Sloka support
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -160,6 +189,8 @@ abstract class DivineDatabase : RoomDatabase() {
     abstract fun userSettingsDao(): UserSettingsDao
     abstract fun assetDao(): AssetDao
     abstract fun lyricsDao(): LyricsDao
+    abstract fun slokaDao(): SlokaDao
+    abstract fun slokaCounterDao(): SlokaCounterDao
 
     companion object {
         @Volatile
@@ -249,6 +280,34 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
+        // Migration from 7 to 8 - add Sloka support
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS slokas (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        godId TEXT NOT NULL,
+                        languageDefault TEXT NOT NULL DEFAULT 'telugu',
+                        scriptTeluguFileName TEXT,
+                        scriptEnglishFileName TEXT,
+                        displayOrder INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sloka_counters (
+                        slokaId TEXT NOT NULL PRIMARY KEY,
+                        count INTEGER NOT NULL DEFAULT 0,
+                        lastUpdated INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = androidx.room.Room.databaseBuilder(
@@ -258,6 +317,7 @@ abstract class DivineDatabase : RoomDatabase() {
                 )
                 // Use destructive migration - simpler and safer for this app
                 // When schema changes, database is wiped and repopulated from JSON
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 // Clear SharedPreferences version when database is destroyed
