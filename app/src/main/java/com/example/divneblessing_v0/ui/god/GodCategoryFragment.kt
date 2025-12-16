@@ -30,6 +30,10 @@ class GodCategoryFragment : Fragment() {
     private lateinit var songsAdapter: GodSongsAdapter
     private lateinit var slokaAdapter: SlokaAdapter
     private lateinit var downloadManager: SongDownloadManager
+    
+    // Flags to prevent flow updates during toggle operations
+    private var isTogglingSloka = false
+    private var isTogglingSong = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,15 +80,20 @@ class GodCategoryFragment : Fragment() {
         downloadManager = SongDownloadManager(requireContext(), repository)
 
         // 1. Sloka Adapter
-        slokaAdapter = SlokaAdapter { slokaItem ->
-            // Navigate to Sloka Viewer
-            val bundle = Bundle().apply {
-                putString("slokaId", slokaItem.id)
-                putString("title", slokaItem.title)
-                putString("godId", slokaItem.godId)
+        slokaAdapter = SlokaAdapter(
+            onSlokaClick = { slokaItem ->
+                // Navigate to Sloka Viewer
+                val bundle = Bundle().apply {
+                    putString("slokaId", slokaItem.id)
+                    putString("title", slokaItem.title)
+                    putString("godId", slokaItem.godId)
+                }
+                findNavController().navigate(R.id.action_godCategory_to_slokaViewer, bundle)
+            },
+            onToggleLike = { slokaItem ->
+                toggleSlokaFavorite(slokaItem.id)
             }
-            findNavController().navigate(R.id.action_godCategory_to_slokaViewer, bundle)
-        }
+        )
 
         // 2. Songs Adapter
         songsAdapter = GodSongsAdapter(
@@ -124,7 +133,11 @@ class GodCategoryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             repository.getSongsByGodWithFavorites(godId).collectLatest { songs: List<SongItem> ->
-                songsAdapter.updateItems(songs.toMutableList())
+                // Only update adapter if we're not in the middle of a toggle operation
+                // This prevents flow updates from overwriting immediate UI changes
+                if (!isTogglingSong) {
+                    songsAdapter.updateItems(songs.toMutableList())
+                }
             }
         }
     }
@@ -132,11 +145,29 @@ class GodCategoryFragment : Fragment() {
     private fun loadSlokas() {
         val repository = (requireActivity().application as DivineApplication).repository
         viewLifecycleOwner.lifecycleScope.launch {
-            repository.getSlokasByGod(godId).collectLatest { slokas ->
-                val items = slokas.map { 
-                    SlokaItem(it.id, it.title, it.godId) 
+            // Use getSlokasByGodWithFavorites instead of raw getSlokasByGod
+            repository.getSlokasByGodWithFavorites(godId).collectLatest { slokaItems ->
+                // Only update adapter if we're not in the middle of a toggle operation
+                // This prevents flow updates from overwriting immediate UI changes
+                if (!isTogglingSloka) {
+                    slokaAdapter.updateItems(slokaItems)
                 }
-                slokaAdapter.updateItems(items)
+            }
+        }
+    }
+
+    private fun toggleSlokaFavorite(slokaId: String) {
+        val repository = (requireActivity().application as DivineApplication).repository
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                isTogglingSloka = true
+                repository.toggleSlokaFavorite(slokaId)
+                // Small delay to ensure DB update completes before allowing flow updates
+                kotlinx.coroutines.delay(100)
+            } catch (e: Exception) {
+                android.util.Log.e("GodCategoryFragment", "Sloka Favorite toggle error: ${e.message}", e)
+            } finally {
+                isTogglingSloka = false
             }
         }
     }
@@ -146,9 +177,14 @@ class GodCategoryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             try {
+                isTogglingSong = true
                 repository.toggleFavorite(songId)
+                // Small delay to ensure DB update completes before allowing flow updates
+                kotlinx.coroutines.delay(100)
             } catch (e: Exception) {
                 android.util.Log.e("GodCategoryFragment", "Favorite toggle error: ${e.message}", e)
+            } finally {
+                isTogglingSong = false
             }
         }
     }

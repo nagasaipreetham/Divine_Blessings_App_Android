@@ -71,6 +71,12 @@ data class SlokaCounter(
     val lastUpdated: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "sloka_favorites")
+data class SlokaFavorite(
+    @PrimaryKey val slokaId: String,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
 // UI Models for RecyclerViews
 data class GodItem(
     val id: String,
@@ -90,7 +96,8 @@ data class SongItem(
 data class SlokaItem(
     val id: String,
     val title: String,
-    val godId: String
+    val godId: String,
+    var isFavorite: Boolean = false
 )
 
 // Search result model

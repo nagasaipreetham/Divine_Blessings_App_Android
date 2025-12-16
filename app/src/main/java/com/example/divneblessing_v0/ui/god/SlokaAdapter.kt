@@ -10,7 +10,8 @@ import com.example.divneblessing_v0.R
 import com.example.divneblessing_v0.data.SlokaItem
 
 class SlokaAdapter(
-    private val onSlokaClick: (SlokaItem) -> Unit
+    private val onSlokaClick: (SlokaItem) -> Unit,
+    private val onToggleLike: (SlokaItem) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private var items = listOf<SlokaItem>()
@@ -27,11 +28,8 @@ class SlokaAdapter(
         items = newItems
         
         if (wasExpanded) {
-            // If already expanded, notify changes to content
-            // Simplest is notifyDataSetChanged, or diff util for better animations
             notifyDataSetChanged()
         } else {
-            // Just update header if needed (count changes?)
             notifyItemChanged(0) 
         }
     }
@@ -59,7 +57,6 @@ class SlokaAdapter(
             holder.title.text = "Slokas (${items.size})"
             
             // Rotation: 270 (Down) if collapsed, 90 (Up) if expanded.
-            // User requested: Not open -> Down, Open -> Up
             holder.arrow.rotation = if (isExpanded) 90f else 270f
             
             holder.itemView.setOnClickListener {
@@ -68,7 +65,27 @@ class SlokaAdapter(
         } else if (holder is ItemVH) {
             val item = items[position - 1]
             holder.title.text = item.title
+            
+            fun renderLike() {
+                val iconRes = if (item.isFavorite) R.drawable.ic_heart_filled_24 else R.drawable.ic_heart_24
+                holder.likeBtn.setImageResource(iconRes)
+                
+                if (item.isFavorite) {
+                    val redColor = androidx.core.content.ContextCompat.getColor(holder.itemView.context, R.color.red)
+                    holder.likeBtn.imageTintList = android.content.res.ColorStateList.valueOf(redColor)
+                } else {
+                    holder.likeBtn.imageTintList = null 
+                    holder.likeBtn.setColorFilter(android.graphics.Color.parseColor("#DDFFFFFF"))
+                }
+            }
+            renderLike()
+
             holder.itemView.setOnClickListener { onSlokaClick(item) }
+            holder.likeBtn.setOnClickListener { 
+                item.isFavorite = !item.isFavorite // Toggle local state
+                renderLike() // Update visuals immediately
+                onToggleLike(item) // Notify callback
+            }
         }
     }
 
@@ -92,5 +109,6 @@ class SlokaAdapter(
 
     class ItemVH(v: View) : RecyclerView.ViewHolder(v) {
         val title: TextView = v.findViewById(R.id.sloka_title)
+        val likeBtn: android.widget.ImageButton = v.findViewById(R.id.btn_like_sloka)
     }
 }

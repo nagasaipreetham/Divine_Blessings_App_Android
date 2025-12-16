@@ -164,6 +164,24 @@ interface SlokaCounterDao {
     suspend fun resetCounter(slokaId: String)
 }
 
+@Dao
+interface SlokaFavoriteDao {
+    @Query("SELECT * FROM sloka_favorites ORDER BY addedAt DESC")
+    fun getAllFavorites(): Flow<List<SlokaFavorite>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM sloka_favorites WHERE slokaId = :slokaId)")
+    fun isFavorite(slokaId: String): Flow<Boolean>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addFavorite(favorite: SlokaFavorite)
+
+    @Delete
+    suspend fun removeFavorite(favorite: SlokaFavorite)
+
+    @Query("DELETE FROM sloka_favorites WHERE slokaId = :slokaId")
+    suspend fun removeFavoriteById(slokaId: String)
+}
+
 // Main Database
 // Class: DivineDatabase
 @Database(
@@ -176,9 +194,10 @@ interface SlokaCounterDao {
         ContentAsset::class,
         LyricsEntry::class,
         Sloka::class,
-        SlokaCounter::class
+        SlokaCounter::class,
+        SlokaFavorite::class
     ],
-    version = 8, // Incremented to 8 for Sloka support
+    version = 9, // Incremented to 9 for Sloka Favorites
     exportSchema = false
 )
 abstract class DivineDatabase : RoomDatabase() {
@@ -191,6 +210,7 @@ abstract class DivineDatabase : RoomDatabase() {
     abstract fun lyricsDao(): LyricsDao
     abstract fun slokaDao(): SlokaDao
     abstract fun slokaCounterDao(): SlokaCounterDao
+    abstract fun slokaFavoriteDao(): SlokaFavoriteDao
 
     companion object {
         @Volatile
@@ -308,6 +328,20 @@ abstract class DivineDatabase : RoomDatabase() {
             }
         }
 
+        // Migration from 8 to 9 - add Sloka Favorites
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS sloka_favorites (
+                        slokaId TEXT NOT NULL PRIMARY KEY,
+                        addedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getDatabase(context: android.content.Context): DivineDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = androidx.room.Room.databaseBuilder(
@@ -317,7 +351,7 @@ abstract class DivineDatabase : RoomDatabase() {
                 )
                 // Use destructive migration - simpler and safer for this app
                 // When schema changes, database is wiped and repopulated from JSON
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 // Clear SharedPreferences version when database is destroyed

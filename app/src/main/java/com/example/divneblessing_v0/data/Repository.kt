@@ -3,6 +3,8 @@ package com.example.divneblessing_v0.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,6 +28,59 @@ class DivineRepository(private val database: DivineDatabase) {
     // Sloka operations
     fun getSlokasByGod(godId: String): Flow<List<Sloka>> = database.slokaDao().getSlokasByGod(godId)
     suspend fun getSlokaById(slokaId: String): Sloka? = database.slokaDao().getSlokaById(slokaId)
+
+    // Sloka Favorites
+    fun getFavoriteSlokas(): Flow<List<SlokaFavorite>> = database.slokaFavoriteDao().getAllFavorites()
+    
+    fun isSlokaFavorite(slokaId: String): Flow<Boolean> = database.slokaFavoriteDao().isFavorite(slokaId)
+    
+    suspend fun toggleSlokaFavorite(slokaId: String) {
+        val dao = database.slokaFavoriteDao()
+        val isFav = dao.isFavorite(slokaId).first()
+        if (isFav) {
+            dao.removeFavoriteById(slokaId)
+        } else {
+            dao.addFavorite(SlokaFavorite(slokaId))
+        }
+    }
+    
+    // Helper to get Sloka items with favorite status efficiently
+    fun getSlokasByGodWithFavorites(godId: String): Flow<List<SlokaItem>> {
+        return combine(
+            database.slokaDao().getSlokasByGod(godId),
+            database.slokaFavoriteDao().getAllFavorites()
+        ) { slokas, favorites ->
+            val favIds = favorites.map { it.slokaId }.toSet()
+            slokas.map { sloka ->
+                SlokaItem(
+                    id = sloka.id,
+                    title = sloka.title,
+                    godId = sloka.godId,
+                    isFavorite = favIds.contains(sloka.id)
+                )
+            }
+        }
+    }
+
+    // Helper to get favorite slokas with details for the Favorites screen
+    fun getFavoriteSlokasWithDetails(): Flow<List<SlokaItem>> {
+        return database.slokaFavoriteDao().getAllFavorites().flatMapLatest { favorites ->
+             // Manual join: iterate and fetch
+             flow {
+                 val items = favorites.mapNotNull { fav ->
+                     database.slokaDao().getSlokaById(fav.slokaId)?.let { sloka ->
+                         SlokaItem(
+                             id = sloka.id,
+                             title = sloka.title,
+                             godId = sloka.godId,
+                             isFavorite = true
+                         )
+                     }
+                 }
+                 emit(items)
+             }
+        }
+    }
 
     // Favorite operations
     fun getAllFavorites(): Flow<List<Favorite>> = database.favoriteDao().getAllFavorites()

@@ -5,6 +5,10 @@
     android:id="@+id/nav_graph"
     app:startDestination="@id/homeFragment">
 
+    <action
+        android:id="@+id/action_global_slokaViewerFragment"
+        app:destination="@id/slokaViewerFragment" />
+
     <fragment
         android:id="@+id/homeFragment"
         android:name="com.example.divneblessing_v0.home.HomeFragment"
